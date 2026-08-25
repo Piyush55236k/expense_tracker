@@ -1,6 +1,6 @@
 /**
  * Database Service - Client-side Storage Engine (LocalStorage)
- * Provides robust CRUD operations, querying, batch actions, and initial demo data.
+ * Provides robust CRUD operations, querying, batch actions, and import/export.
  */
 
 import { generateId } from '../utils/helpers';
@@ -8,7 +8,7 @@ import { generateId } from '../utils/helpers';
 const TRANSACTIONS_STORAGE_KEY = 'personal_expense_tracker_transactions';
 
 /**
- * Fetch all transactions from storage
+ * Fetch all transactions from local storage
  * @returns {Array} List of transactions sorted newest first
  */
 export function readTransactions() {
@@ -27,7 +27,7 @@ export function readTransactions() {
 }
 
 /**
- * Save array of transactions to storage
+ * Save array of transactions to local storage
  * @param {Array} transactions 
  */
 export function writeTransactions(transactions) {
@@ -41,7 +41,7 @@ export function writeTransactions(transactions) {
 }
 
 /**
- * Insert a single transaction
+ * Insert a single transaction locally
  * @param {Object} txData 
  * @returns {Object} inserted transaction with generated ID and timestamps
  */
@@ -59,7 +59,7 @@ export function insertTransaction(txData) {
     tags: Array.isArray(txData.tags) ? txData.tags : (txData.tags ? [txData.tags] : []),
     receiptUrl: txData.receiptUrl || null,
     isRecurring: Boolean(txData.isRecurring),
-    createdAt: new Date().toISOString(),
+    createdAt: txData.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
 
@@ -69,7 +69,7 @@ export function insertTransaction(txData) {
 }
 
 /**
- * Update an existing transaction
+ * Update an existing transaction locally
  * @param {Object} txData 
  * @returns {Object|null} updated transaction
  */
@@ -92,7 +92,7 @@ export function updateTransaction(txData) {
 }
 
 /**
- * Delete a transaction by ID
+ * Delete a transaction by ID locally
  * @param {string} id 
  * @returns {Object|null} deleted transaction (useful for undo)
  */
@@ -107,7 +107,7 @@ export function deleteTransaction(id) {
 }
 
 /**
- * Delete multiple transactions by IDs
+ * Delete multiple transactions by IDs locally
  * @param {Array<string>} ids 
  * @returns {number} count of deleted items
  */
@@ -122,7 +122,7 @@ export function deleteMultipleTransactions(ids) {
 }
 
 /**
- * Clear all transaction records
+ * Clear all transaction records from storage
  */
 export function clearAllTransactions() {
   localStorage.removeItem(TRANSACTIONS_STORAGE_KEY);
@@ -162,198 +162,4 @@ export function restoreBackupPayload(payload, mode = 'replace') {
   }
 
   return true;
-}
-
-/**
- * Seed realistic initial demo transactions spanning the current and previous months
- */
-export function seedInitialDemoData() {
-  const today = new Date();
-  const makeDate = (daysAgo) => {
-    const d = new Date(today);
-    d.setDate(d.getDate() - daysAgo);
-    return d.toISOString().split('T')[0];
-  };
-
-  const demoTransactions = [
-    // Today
-    {
-      id: generateId(),
-      type: 'EXPENSE',
-      amount: 4.80,
-      category: 'Food & Dining',
-      paymentMode: 'UPI / QR',
-      date: makeDate(0),
-      time: '08:30',
-      notes: 'Morning Cappuccino & Croissant',
-      tags: ['coffee', 'breakfast'],
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: generateId(),
-      type: 'EXPENSE',
-      amount: 18.50,
-      category: 'Food & Dining',
-      paymentMode: 'UPI / QR',
-      date: makeDate(0),
-      time: '13:15',
-      notes: 'Healthy Sushi Lunch Bowl',
-      tags: ['lunch'],
-      createdAt: new Date().toISOString()
-    },
-    // Yesterday
-    {
-      id: generateId(),
-      type: 'EXPENSE',
-      amount: 62.40,
-      category: 'Shopping',
-      paymentMode: 'Credit Card',
-      date: makeDate(1),
-      time: '17:45',
-      notes: 'Weekly organic groceries at Whole Foods',
-      tags: ['groceries', 'food'],
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: generateId(),
-      type: 'EXPENSE',
-      amount: 25.00,
-      category: 'Transportation',
-      paymentMode: 'Credit Card',
-      date: makeDate(1),
-      time: '09:10',
-      notes: 'City Cab ride to client meeting',
-      tags: ['commute'],
-      createdAt: new Date().toISOString()
-    },
-    // 3 days ago
-    {
-      id: generateId(),
-      type: 'INCOME',
-      amount: 650.00,
-      category: 'Freelance & Projects',
-      paymentMode: 'Bank Transfer',
-      date: makeDate(3),
-      time: '11:00',
-      notes: 'UI/UX Design milestone payment - SaaS Dashboard',
-      tags: ['freelance', 'client'],
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: generateId(),
-      type: 'EXPENSE',
-      amount: 14.99,
-      category: 'Bills & Utilities',
-      paymentMode: 'Credit Card',
-      date: makeDate(3),
-      time: '14:20',
-      notes: 'Cloud Storage & Spotify Duo Subscription',
-      tags: ['subscription'],
-      createdAt: new Date().toISOString()
-    },
-    // 5 days ago
-    {
-      id: generateId(),
-      type: 'EXPENSE',
-      amount: 45.00,
-      category: 'Health & Fitness',
-      paymentMode: 'Debit Card',
-      date: makeDate(5),
-      time: '07:30',
-      notes: 'Monthly gym & yoga pass',
-      tags: ['fitness', 'health'],
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: generateId(),
-      type: 'EXPENSE',
-      amount: 32.50,
-      category: 'Entertainment',
-      paymentMode: 'UPI / QR',
-      date: makeDate(5),
-      time: '20:30',
-      notes: 'IMAX Cinema tickets with friends',
-      tags: ['movie', 'weekend'],
-      createdAt: new Date().toISOString()
-    },
-    // 7 days ago
-    {
-      id: generateId(),
-      type: 'EXPENSE',
-      amount: 85.00,
-      category: 'Shopping',
-      paymentMode: 'Credit Card',
-      date: makeDate(7),
-      time: '16:00',
-      notes: 'Ergonomic mouse & desk accessories',
-      tags: ['tech', 'workspace'],
-      createdAt: new Date().toISOString()
-    },
-    // 12 days ago
-    {
-      id: generateId(),
-      type: 'EXPENSE',
-      amount: 110.00,
-      category: 'Bills & Utilities',
-      paymentMode: 'Bank Transfer',
-      date: makeDate(12),
-      time: '10:00',
-      notes: 'Electricity & High-speed Internet Bill',
-      tags: ['utilities'],
-      createdAt: new Date().toISOString()
-    },
-    // 15 days ago - Salary
-    {
-      id: generateId(),
-      type: 'INCOME',
-      amount: 3400.00,
-      category: 'Salary',
-      paymentMode: 'Bank Transfer',
-      date: makeDate(15),
-      time: '09:00',
-      notes: 'Monthly Salary Credit - Tech Corp',
-      tags: ['salary', 'primary-income'],
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: generateId(),
-      type: 'EXPENSE',
-      amount: 850.00,
-      category: 'Housing & Rent',
-      paymentMode: 'Bank Transfer',
-      date: makeDate(15),
-      time: '12:00',
-      notes: 'Apartment monthly rent payment',
-      tags: ['rent', 'fixed-expense'],
-      createdAt: new Date().toISOString()
-    },
-    // 20 days ago
-    {
-      id: generateId(),
-      type: 'EXPENSE',
-      amount: 95.00,
-      category: 'Food & Dining',
-      paymentMode: 'Credit Card',
-      date: makeDate(20),
-      time: '19:45',
-      notes: 'Weekend Family Dinner at Italian Bistro',
-      tags: ['dinner', 'family'],
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: generateId(),
-      type: 'INCOME',
-      amount: 180.00,
-      category: 'Dividends & Capital Gains',
-      paymentMode: 'Digital Wallet',
-      date: makeDate(22),
-      time: '14:30',
-      notes: 'Quarterly index fund dividend payout',
-      tags: ['passive-income', 'stocks'],
-      createdAt: new Date().toISOString()
-    }
-  ];
-
-  writeTransactions(demoTransactions);
-  return demoTransactions;
 }

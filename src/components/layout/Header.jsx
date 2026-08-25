@@ -1,10 +1,10 @@
 import React from 'react';
-import { Moon, Sun, Sparkles, Plus, TrendingUp, TrendingDown, DollarSign } from 'lucide-react';
+import { Moon, Sun, Sparkles, Plus, Cloud, RefreshCw } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { getGreeting } from '../../utils/helpers';
 
 export default function Header() {
-  const { settings, setTheme, openModal, activeTab } = useExpense();
+  const { settings, setTheme, openModal, activeTab, supabaseStatus, setActiveTab } = useExpense();
   const greeting = getGreeting();
 
   const toggleTheme = () => {
@@ -49,7 +49,43 @@ export default function Header() {
       </div>
 
       {/* Right: Quick Action Controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+        {/* Cloud Sync Status Indicator */}
+        <button
+          onClick={() => setActiveTab('settings')}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '5px',
+            padding: '5px 10px',
+            borderRadius: 'var(--radius-full)',
+            background: supabaseStatus === 'connected' ? 'var(--color-income-subtle)' : 'var(--bg-card)',
+            border: `1px solid ${supabaseStatus === 'connected' ? 'rgba(16, 185, 129, 0.3)' : 'var(--border-card)'}`,
+            color: supabaseStatus === 'connected' ? 'var(--color-income)' : 'var(--text-dim)',
+            fontSize: '0.75rem',
+            fontWeight: 600,
+            cursor: 'pointer'
+          }}
+          title={supabaseStatus === 'connected' ? 'Supabase Real-Time Cloud Sync: Active' : 'Supabase Cloud Sync: Click to setup'}
+        >
+          {supabaseStatus === 'connected' ? (
+            <>
+              <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: 'var(--color-income)' }} />
+              <span style={{ display: 'none' }} className="cloud-label-desktop">Cloud Synced</span>
+            </>
+          ) : supabaseStatus === 'syncing' ? (
+            <>
+              <RefreshCw size={12} className="animate-spin" />
+              <span style={{ display: 'none' }} className="cloud-label-desktop">Syncing...</span>
+            </>
+          ) : (
+            <>
+              <Cloud size={13} />
+              <span style={{ display: 'none' }} className="cloud-label-desktop">Setup Cloud</span>
+            </>
+          )}
+        </button>
+
         {/* Currency Pill */}
         <div
           className="badge badge-neutral"
@@ -84,6 +120,7 @@ export default function Header() {
         @media (min-width: 640px) {
           #desktop-currency-badge { display: inline-flex !important; }
           .btn-label-desktop { display: inline !important; }
+          .cloud-label-desktop { display: inline !important; }
         }
       `}</style>
     </header>

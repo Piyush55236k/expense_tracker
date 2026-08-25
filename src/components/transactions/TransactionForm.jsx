@@ -116,7 +116,7 @@ export default function TransactionForm({
     }
   };
 
-  const presetList = type === 'INCOME' ? [50, 100, 500, 1000, 2500] : [5, 10, 25, 50, 100];
+  const presetList = type === 'INCOME' ? [1000, 5000, 10000, 25000, 50000] : [50, 100, 200, 500, 1000];
 
   return (
     <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>

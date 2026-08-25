@@ -5,7 +5,7 @@
 /**
  * Convert transactions array to downloadable CSV string
  */
-export function exportTransactionsToCSV(transactions, currencySymbol = '$') {
+export function exportTransactionsToCSV(transactions, currencySymbol = '₹') {
   if (!transactions || transactions.length === 0) {
     return 'ID,Date,Time,Type,Category,Amount,PaymentMode,Notes,Tags\n';
   }

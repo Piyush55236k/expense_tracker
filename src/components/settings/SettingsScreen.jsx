@@ -2,6 +2,7 @@ import React from 'react';
 import { User, Moon, Sun, Sparkles } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { CURRENCY_OPTIONS } from '../../services/settings';
+import SupabaseSync from './SupabaseSync';
 import CategoryManager from './CategoryManager';
 import PaymentModeManager from './PaymentModeManager';
 import BudgetConfig from './BudgetConfig';
@@ -33,11 +34,14 @@ export default function SettingsScreen() {
           Preferences & Settings
         </h2>
         <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-          Customize your experience, manage categories, accounts, currencies, and backups.
+          Customize your experience, connect cloud multi-device sync, and manage categories.
         </p>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        {/* Supabase Multi-Device Cloud Sync Card */}
+        <SupabaseSync />
+
         {/* Profile & Currency Card */}
         <div className="glass-card" style={{ padding: '1.5rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem' }}>

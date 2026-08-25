@@ -1,18 +1,18 @@
 /**
  * ExpenseContext - Global State & Action Hub
- * Connects Database, Settings, Analytics, and UI layers seamlessly.
+ * Connects LocalStorage, Settings, Analytics, and Real-Time Supabase Cloud Sync.
  */
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import confetti from 'canvas-confetti';
 import {
   readTransactions,
+  writeTransactions,
   insertTransaction,
   updateTransaction,
   deleteTransaction,
   deleteMultipleTransactions,
   clearAllTransactions,
-  seedInitialDemoData,
   createBackupPayload,
   restoreBackupPayload
 } from '../services/database';
@@ -32,6 +32,17 @@ import {
   getDailyAverage,
   generateSmartInsights
 } from '../services/analytics';
+import {
+  isSupabaseConfigured,
+  fetchSupabaseTransactions,
+  insertSupabaseTransaction,
+  updateSupabaseTransaction,
+  deleteSupabaseTransaction,
+  deleteMultipleSupabaseTransactions,
+  syncAllLocalToSupabase,
+  subscribeToSupabaseRealtime,
+  testSupabaseConnection
+} from '../services/supabase';
 import { exportTransactionsToCSV } from '../utils/csv';
 import { downloadFile } from '../utils/helpers';
 
@@ -41,6 +52,7 @@ export function ExpenseProvider({ children }) {
   // 1. Core State
   const [settings, setSettingsState] = useState(() => loadSettingsFromStorage());
   const [transactions, setTransactions] = useState(() => readTransactions());
+  const [supabaseStatus, setSupabaseStatus] = useState('disconnected'); // 'connected' | 'disconnected' | 'syncing' | 'error'
 
   // 2. UI Navigation & View State
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -101,11 +113,107 @@ export function ExpenseProvider({ children }) {
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 
-  // Transaction CRUD Operations
+  // 5. Supabase Sync Methods
+  const syncWithSupabase = useCallback(async () => {
+    if (!isSupabaseConfigured()) {
+      setSupabaseStatus('disconnected');
+      return;
+    }
+
+    try {
+      setSupabaseStatus('syncing');
+      const remoteRecords = await fetchSupabaseTransactions();
+      if (remoteRecords) {
+        writeTransactions(remoteRecords);
+        setTransactions(remoteRecords);
+        setSupabaseStatus('connected');
+      }
+    } catch (err) {
+      console.error('Supabase sync error:', err);
+      setSupabaseStatus('error');
+    }
+  }, []);
+
+  const pushLocalToSupabase = useCallback(async () => {
+    if (!isSupabaseConfigured()) return;
+    try {
+      setSupabaseStatus('syncing');
+      const local = readTransactions();
+      await syncAllLocalToSupabase(local);
+      await syncWithSupabase();
+      showToast({ type: 'success', title: 'Uploaded to Cloud', message: 'Local records synced to Supabase database.' });
+    } catch (err) {
+      console.error('Error pushing local data to Supabase:', err);
+      showToast({ type: 'error', title: 'Upload Failed', message: err.message || 'Could not upload to Supabase.' });
+    }
+  }, [showToast, syncWithSupabase]);
+
+  // Initial Supabase Boot & Realtime Subscription
+  useEffect(() => {
+    let unsubscribe = () => {};
+
+    const initSupabase = async () => {
+      if (isSupabaseConfigured()) {
+        const testRes = await testSupabaseConnection();
+        if (testRes.success) {
+          setSupabaseStatus('connected');
+          syncWithSupabase();
+
+          // Subscribe to live multi-device real-time updates!
+          unsubscribe = subscribeToSupabaseRealtime(
+            // On Insert from other device
+            (newTx) => {
+              setTransactions(prev => {
+                const filtered = prev.filter(t => t.id !== newTx.id);
+                const updated = [newTx, ...filtered].sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
+                writeTransactions(updated);
+                return updated;
+              });
+            },
+            // On Update from other device
+            (updatedTx) => {
+              setTransactions(prev => {
+                const updated = prev.map(t => (t.id === updatedTx.id ? updatedTx : t));
+                writeTransactions(updated);
+                return updated;
+              });
+            },
+            // On Delete from other device
+            (deletedId) => {
+              setTransactions(prev => {
+                const updated = prev.filter(t => t.id !== deletedId);
+                writeTransactions(updated);
+                return updated;
+              });
+            }
+          );
+        } else {
+          setSupabaseStatus('error');
+        }
+      } else {
+        setSupabaseStatus('disconnected');
+      }
+    };
+
+    initSupabase();
+
+    return () => {
+      unsubscribe();
+    };
+  }, [syncWithSupabase]);
+
+  // 6. Transaction CRUD Operations (Offline LocalStorage + Real-time Supabase)
   const addTransaction = useCallback((txData, options = {}) => {
     try {
       const created = insertTransaction(txData);
       setTransactions(readTransactions());
+
+      // Sync to Supabase in background if configured
+      if (isSupabaseConfigured()) {
+        insertSupabaseTransaction(created).catch(err => {
+          console.warn('Supabase remote insert delayed:', err);
+        });
+      }
 
       if (options.celebrate || created.type === 'INCOME') {
         confetti({
@@ -138,6 +246,14 @@ export function ExpenseProvider({ children }) {
       const updated = updateTransaction(txData);
       if (updated) {
         setTransactions(readTransactions());
+
+        // Sync update to Supabase
+        if (isSupabaseConfigured()) {
+          updateSupabaseTransaction(updated).catch(err => {
+            console.warn('Supabase remote update delayed:', err);
+          });
+        }
+
         showToast({
           type: 'success',
           title: 'Transaction Updated',
@@ -162,6 +278,13 @@ export function ExpenseProvider({ children }) {
       if (deleted) {
         setTransactions(readTransactions());
 
+        // Sync delete to Supabase
+        if (isSupabaseConfigured()) {
+          deleteSupabaseTransaction(id).catch(err => {
+            console.warn('Supabase remote delete delayed:', err);
+          });
+        }
+
         showToast({
           type: 'warning',
           title: 'Transaction Deleted',
@@ -170,6 +293,9 @@ export function ExpenseProvider({ children }) {
           onAction: () => {
             insertTransaction(deleted);
             setTransactions(readTransactions());
+            if (isSupabaseConfigured()) {
+              insertSupabaseTransaction(deleted);
+            }
             showToast({
               type: 'info',
               title: 'Restored',
@@ -193,6 +319,13 @@ export function ExpenseProvider({ children }) {
     if (!ids || ids.length === 0) return;
     const count = deleteMultipleTransactions(ids);
     setTransactions(readTransactions());
+
+    if (isSupabaseConfigured()) {
+      deleteMultipleSupabaseTransactions(ids).catch(err => {
+        console.warn('Supabase remote bulk delete delayed:', err);
+      });
+    }
+
     showToast({
       type: 'warning',
       title: 'Bulk Delete',
@@ -200,7 +333,7 @@ export function ExpenseProvider({ children }) {
     });
   }, [showToast]);
 
-  // Settings & Theme Operations
+  // 7. Settings & Theme Operations
   const updateSettings = useCallback((newPartialSettings) => {
     setSettingsState(prev => {
       const updated = { ...prev, ...newPartialSettings };
@@ -280,6 +413,11 @@ export function ExpenseProvider({ children }) {
         saveSettingsToStorage(payload.settings);
       }
       setTransactions(readTransactions());
+
+      if (isSupabaseConfigured()) {
+        syncAllLocalToSupabase(readTransactions());
+      }
+
       showToast({
         type: 'success',
         title: 'Data Imported',
@@ -295,23 +433,13 @@ export function ExpenseProvider({ children }) {
     }
   }, [showToast]);
 
-  const loadDemo = useCallback(() => {
-    const seeded = seedInitialDemoData();
-    setTransactions(seeded);
-    showToast({
-      type: 'info',
-      title: 'Demo Data Loaded',
-      message: 'Sample expenses and income have been generated.'
-    });
-  }, [showToast]);
-
   const wipeAllData = useCallback(() => {
     clearAllTransactions();
     setTransactions([]);
     showToast({
       type: 'info',
       title: 'Data Cleared',
-      message: 'All transaction history has been cleared.'
+      message: 'All local transaction history has been cleared.'
     });
   }, [showToast]);
 
@@ -337,6 +465,7 @@ export function ExpenseProvider({ children }) {
     modalState,
     confirmDialog,
     historyFilters,
+    supabaseStatus,
 
     // Setters
     setActiveTab,
@@ -349,6 +478,10 @@ export function ExpenseProvider({ children }) {
     closeModal,
     openConfirmDialog,
     closeConfirmDialog,
+
+    // Supabase Sync
+    syncWithSupabase,
+    pushLocalToSupabase,
 
     // CRUD
     addTransaction,
@@ -364,7 +497,6 @@ export function ExpenseProvider({ children }) {
     exportCSV,
     exportJSONBackup,
     importJSONBackup,
-    loadDemo,
     wipeAllData,
 
     // Computed Analytics

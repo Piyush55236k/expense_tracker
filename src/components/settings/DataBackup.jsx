@@ -4,8 +4,7 @@ import {
   Upload,
   FileSpreadsheet,
   Trash2,
-  Database,
-  Sparkles
+  Database
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 
@@ -14,7 +13,6 @@ export default function DataBackup() {
     exportCSV,
     exportJSONBackup,
     importJSONBackup,
-    loadDemo,
     wipeAllData,
     openConfirmDialog,
     transactions
@@ -47,15 +45,6 @@ export default function DataBackup() {
       confirmText: 'Wipe All Data',
       isDanger: true,
       onConfirm: () => wipeAllData()
-    });
-  };
-
-  const handleReloadDemo = () => {
-    openConfirmDialog({
-      title: 'Load Demo Data',
-      message: 'This will replace your current data with sample expenses & income spanning recent months. Continue?',
-      confirmText: 'Load Demo',
-      onConfirm: () => loadDemo()
     });
   };
 
@@ -100,23 +89,14 @@ export default function DataBackup() {
         </div>
 
         {/* Row 2: Import Backup */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem' }}>
+        <div>
           <button
             className="btn btn-outline"
             onClick={() => fileInputRef.current?.click()}
-            style={{ padding: '0.75rem', justifyContent: 'flex-start' }}
+            style={{ width: '100%', padding: '0.75rem', justifyContent: 'flex-start' }}
           >
             <Upload size={16} color="var(--color-warning)" />
-            <span>Restore / Import Backup</span>
-          </button>
-
-          <button
-            className="btn btn-outline"
-            onClick={handleReloadDemo}
-            style={{ padding: '0.75rem', justifyContent: 'flex-start' }}
-          >
-            <Sparkles size={16} color="#38bdf8" />
-            <span>Load Sample Demo Data</span>
+            <span>Restore / Import Backup (.json)</span>
           </button>
         </div>
 

@@ -9,7 +9,7 @@
  * @param {string} currencySymbol - e.g. '$', '₹', '€', '£'
  * @returns {string} Formatted currency string
  */
-export function formatCurrency(amount, currencyCode = 'USD', currencySymbol = '$') {
+export function formatCurrency(amount, currencyCode = 'INR', currencySymbol = '₹') {
   if (amount === undefined || amount === null || isNaN(amount)) {
     return `${currencySymbol}0.00`;
   }
@@ -18,7 +18,8 @@ export function formatCurrency(amount, currencyCode = 'USD', currencySymbol = '$
   const isNegative = num < 0;
   const absAmount = Math.abs(num);
 
-  const formattedNum = absAmount.toLocaleString('en-US', {
+  const locale = currencyCode === 'INR' ? 'en-IN' : 'en-US';
+  const formattedNum = absAmount.toLocaleString(locale, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   });
