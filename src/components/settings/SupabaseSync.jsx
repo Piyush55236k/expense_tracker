@@ -7,7 +7,10 @@ import {
   Code2,
   Database,
   Smartphone,
-  Laptop
+  Laptop,
+  Lock,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import {
@@ -52,9 +55,13 @@ COMMIT;`;
 export default function SupabaseSync() {
   const { syncWithSupabase, supabaseStatus, pushLocalToSupabase, showToast } = useExpense();
   
-  const initialConfig = getSupabaseConfig();
-  const [url, setUrl] = useState(initialConfig.url || '');
-  const [key, setKey] = useState(initialConfig.key || '');
+  const currentConfig = getSupabaseConfig();
+  const isEnvConfigured = currentConfig.source === 'env';
+  
+  const [url, setUrl] = useState(isEnvConfigured ? '' : (currentConfig.url || ''));
+  const [key, setKey] = useState(isEnvConfigured ? '' : (currentConfig.key || ''));
+  const [showKey, setShowKey] = useState(false);
+  const [isEditingCustom, setIsEditingCustom] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [showSqlGuide, setShowSqlGuide] = useState(false);
@@ -64,7 +71,7 @@ export default function SupabaseSync() {
   const handleSaveAndConnect = async (e) => {
     e?.preventDefault();
     if (!url.trim() || !key.trim()) {
-      showToast({ type: 'warning', title: 'Missing Fields', message: 'Please enter both Supabase URL and Anon Key.' });
+      showToast({ type: 'warning', title: 'Missing Fields', message: 'Please enter both Supabase URL and Publishable/Anon Key.' });
       return;
     }
 
@@ -78,6 +85,7 @@ export default function SupabaseSync() {
 
     if (result.success) {
       showToast({ type: 'success', title: 'Cloud Connected!', message: 'Supabase real-time sync is now active.' });
+      setIsEditingCustom(false);
       syncWithSupabase();
     } else {
       showToast({ type: 'error', title: 'Connection Failed', message: result.message });
@@ -89,7 +97,8 @@ export default function SupabaseSync() {
     setUrl('');
     setKey('');
     setTestResult(null);
-    showToast({ type: 'info', title: 'Disconnected', message: 'Supabase cloud sync has been disabled.' });
+    setIsEditingCustom(false);
+    showToast({ type: 'info', title: 'Disconnected', message: 'Custom Supabase credentials cleared.' });
   };
 
   const handleCopySql = () => {
@@ -111,7 +120,22 @@ export default function SupabaseSync() {
     setIsSyncingNow(false);
   };
 
-  const isConfigured = Boolean(url && key);
+  const isConfigured = Boolean(currentConfig.url && currentConfig.key);
+
+  // Masked helper
+  const maskUrl = (rawUrl) => {
+    if (!rawUrl) return '';
+    try {
+      const u = new URL(rawUrl);
+      const hostParts = u.hostname.split('.');
+      if (hostParts.length > 0) {
+        return `https://${hostParts[0].slice(0, 5)}••••.${hostParts.slice(1).join('.')}`;
+      }
+    } catch {
+      return 'https://••••••••••••.supabase.co';
+    }
+    return 'https://••••••••••••.supabase.co';
+  };
 
   return (
     <div className="glass-card" style={{ padding: '1.5rem', position: 'relative', overflow: 'hidden' }}>
@@ -137,7 +161,7 @@ export default function SupabaseSync() {
               Phone & Desktop Live Cloud Sync
             </h3>
             <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              Real-time multi-device sync powered by Supabase (PostgreSQL).
+              Real-time multi-device database sync powered by Supabase (PostgreSQL).
             </p>
           </div>
         </div>
@@ -184,7 +208,7 @@ export default function SupabaseSync() {
             <Laptop size={18} />
           </div>
           <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-            Changes made on your <strong>Phone</strong> instantly appear on your <strong>Desktop</strong> in real-time.
+            Changes made on your <strong>Phone</strong> appear on your <strong>Desktop</strong> in real-time.
           </span>
         </div>
 
@@ -212,92 +236,163 @@ export default function SupabaseSync() {
         )}
       </div>
 
-      {/* Credentials Form */}
-      <form onSubmit={handleSaveAndConnect} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <div className="input-group">
-          <label className="input-label">Supabase Project URL</label>
-          <input
-            type="url"
-            placeholder="https://your-project-id.supabase.co"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            className="form-input"
-            required
-          />
-        </div>
-
-        <div className="input-group">
-          <label className="input-label">Supabase Anon Public API Key</label>
-          <input
-            type="password"
-            placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-            value={key}
-            onChange={(e) => setKey(e.target.value)}
-            className="form-input"
-            required
-          />
-        </div>
-
-        {/* Test Result Message */}
-        {testResult && (
-          <div
-            style={{
-              padding: '0.75rem 1rem',
-              borderRadius: 'var(--radius-md)',
-              background: testResult.success ? 'var(--color-income-subtle)' : 'var(--color-expense-subtle)',
-              border: `1px solid ${testResult.success ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)'}`,
-              color: testResult.success ? 'var(--color-income)' : 'var(--color-expense)',
-              fontSize: '0.85rem',
-              lineHeight: 1.5
-            }}
-          >
-            {testResult.message}
+      {/* Secure Connection Details View (When Configured via .env or Saved) */}
+      {isConfigured && !isEditingCustom ? (
+        <div
+          style={{
+            padding: '1.1rem',
+            borderRadius: 'var(--radius-lg)',
+            background: 'rgba(16, 185, 129, 0.05)',
+            border: '1px solid rgba(16, 185, 129, 0.2)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.75rem'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Lock size={16} color="var(--color-income)" />
+              <span style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-main)' }}>
+                {isEnvConfigured ? 'Secured via System Environment (.env)' : 'Secured via Browser Storage'}
+              </span>
+            </div>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+              Credentials Protected & Masked
+            </span>
           </div>
-        )}
 
-        {/* Actions */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginTop: '0.5rem' }}>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => setShowSqlGuide(prev => !prev)}
-            style={{ fontSize: '0.82rem', padding: '6px 8px', color: 'var(--color-primary-light)' }}
-          >
-            <Code2 size={16} />
-            {showSqlGuide ? 'Hide SQL Setup Guide' : 'View SQL Setup Guide (Required Once)'}
-          </button>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.5rem', fontSize: '0.8rem' }}>
+            <div style={{ padding: '0.5rem 0.75rem', background: 'var(--bg-card)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.72rem' }}>PROJECT ENDPOINT</span>
+              <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-main)' }}>{maskUrl(currentConfig.url)}</span>
+            </div>
+            <div style={{ padding: '0.5rem 0.75rem', background: 'var(--bg-card)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.72rem' }}>PUBLISHABLE KEY</span>
+              <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-main)' }}>••••••••••••••••••••••••••••</span>
+            </div>
+          </div>
 
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            {isConfigured && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.25rem' }}>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => setShowSqlGuide(prev => !prev)}
+              style={{ fontSize: '0.78rem', padding: '4px 6px', color: 'var(--color-primary-light)' }}
+            >
+              <Code2 size={15} />
+              {showSqlGuide ? 'Hide SQL Schema' : 'View SQL Schema'}
+            </button>
+
+            {!isEnvConfigured && (
               <button
                 type="button"
-                className="btn btn-outline"
-                onClick={handleDisconnect}
-                style={{ color: 'var(--color-expense)' }}
+                className="btn btn-ghost"
+                onClick={() => setIsEditingCustom(true)}
+                style={{ fontSize: '0.78rem', padding: '4px 8px' }}
               >
-                Disconnect
+                Change Key
               </button>
             )}
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={isTesting}
-            >
-              {isTesting ? (
-                <>
-                  <RefreshCw size={16} className="animate-spin" />
-                  Testing...
-                </>
-              ) : (
-                <>
-                  <Check size={16} />
-                  Save & Connect
-                </>
-              )}
-            </button>
           </div>
         </div>
-      </form>
+      ) : (
+        /* Form for entering keys if not in .env */
+        <form onSubmit={handleSaveAndConnect} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div className="input-group">
+            <label className="input-label">Supabase Project URL</label>
+            <input
+              type="url"
+              placeholder="https://your-project-id.supabase.co"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              className="form-input"
+              required
+            />
+          </div>
+
+          <div className="input-group">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+              <label className="input-label" style={{ marginBottom: 0 }}>Supabase Publishable / Anon Key</label>
+              <button
+                type="button"
+                onClick={() => setShowKey(prev => !prev)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px', fontSize: '0.75rem' }}
+              >
+                {showKey ? <EyeOff size={13} /> : <Eye size={13} />}
+                {showKey ? 'Hide' : 'Show'}
+              </button>
+            </div>
+            <input
+              type={showKey ? 'text' : 'password'}
+              placeholder="sb_publishable_... or eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+              className="form-input"
+              required
+            />
+          </div>
+
+          {/* Test Result Message */}
+          {testResult && (
+            <div
+              style={{
+                padding: '0.75rem 1rem',
+                borderRadius: 'var(--radius-md)',
+                background: testResult.success ? 'var(--color-income-subtle)' : 'var(--color-expense-subtle)',
+                border: `1px solid ${testResult.success ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)'}`,
+                color: testResult.success ? 'var(--color-income)' : 'var(--color-expense)',
+                fontSize: '0.85rem',
+                lineHeight: 1.5
+              }}
+            >
+              {testResult.message}
+            </div>
+          )}
+
+          {/* Actions */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginTop: '0.5rem' }}>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => setShowSqlGuide(prev => !prev)}
+              style={{ fontSize: '0.82rem', padding: '6px 8px', color: 'var(--color-primary-light)' }}
+            >
+              <Code2 size={16} />
+              {showSqlGuide ? 'Hide SQL Setup Guide' : 'View SQL Setup Guide'}
+            </button>
+
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              {isConfigured && (
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={handleDisconnect}
+                  style={{ color: 'var(--color-expense)' }}
+                >
+                  Disconnect
+                </button>
+              )}
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={isTesting}
+              >
+                {isTesting ? (
+                  <>
+                    <RefreshCw size={16} className="animate-spin" />
+                    Testing...
+                  </>
+                ) : (
+                  <>
+                    <Check size={16} />
+                    Save & Connect
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </form>
+      )}
 
       {/* SQL Setup Drawer */}
       {showSqlGuide && (
