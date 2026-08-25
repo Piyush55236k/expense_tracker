@@ -28,15 +28,15 @@ export function getSupabaseConfig() {
   }
 
   const envUrl =
-    import.meta.env.VITE_SUPABASE_URL ||
-    import.meta.env.VITE_SUPABASE_UR ||
-    import.meta.env.VITE_SUPABASE_URI;
+    import.meta.env.SUPABASE_URL ||
+    import.meta.env.SUPABASE_UR ||
+    import.meta.env.SUPABASE_URI;
 
   const envKey =
-    import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-    import.meta.env.VITE_SUPABASE_PUBLISHABLE_KE ||
-    import.meta.env.VITE_SUPABASE_ANON_KEY ||
-    import.meta.env.VITE_SUPABASE_KEY;
+    import.meta.env.SUPABASE_PUBLISHABLE_KEY ||
+    import.meta.env.SUPABASE_PUBLISHABLE_KE ||
+    import.meta.env.SUPABASE_ANON_KEY ||
+    import.meta.env.SUPABASE_KEY;
 
   if (envUrl && envKey && String(envUrl).trim() !== '' && String(envKey).trim() !== '') {
     return {
