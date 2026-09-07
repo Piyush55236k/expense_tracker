@@ -51,7 +51,8 @@ import {
   updateGoogleSheetTransaction,
   deleteGoogleSheetTransaction,
   deleteMultipleGoogleSheetTransactions,
-  syncAllLocalToGoogleSheet
+  syncAllLocalToGoogleSheet,
+  checkAndApplyUrlSyncConfig
 } from '../services/googleSheets';
 import { exportTransactionsToCSV } from '../utils/csv';
 import { downloadFile } from '../utils/helpers';
@@ -250,15 +251,26 @@ export function ExpenseProvider({ children }) {
     return () => window.removeEventListener('focus', handleWindowFocus);
   }, [syncWithGoogleSheet]);
 
-  // Initial Google Sheet Boot
+  // Initial Google Sheet Boot & URL Auto-Pairing
   useEffect(() => {
+    const syncedFromUrl = checkAndApplyUrlSyncConfig();
+    if (syncedFromUrl) {
+      setTimeout(() => {
+        showToast({
+          type: 'success',
+          title: 'Device Paired!',
+          message: 'Connected to your Google Sheet database automatically.'
+        });
+      }, 0);
+    }
+
     if (isGoogleSheetConfigured()) {
       const timer = setTimeout(() => {
         syncWithGoogleSheet();
       }, 0);
       return () => clearTimeout(timer);
     }
-  }, [syncWithGoogleSheet]);
+  }, [syncWithGoogleSheet, showToast]);
 
   // 8. Supabase Sync Methods
   const syncWithSupabase = useCallback(async () => {

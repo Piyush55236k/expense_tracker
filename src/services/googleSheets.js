@@ -65,6 +65,37 @@ export function isGoogleSheetConfigured() {
 }
 
 /**
+ * Automatically inspect URL search parameters for ?sync_url=... or ?sheet_url=...
+ * When opened on mobile phone, automatically saves config to localStorage and cleans address bar.
+ */
+export function checkAndApplyUrlSyncConfig() {
+  try {
+    if (typeof window === 'undefined') return false;
+    const params = new URLSearchParams(window.location.search);
+    const syncUrl = params.get('sync_url') || params.get('sheetUrl') || params.get('sheet_url');
+    if (syncUrl && syncUrl.trim().startsWith('http')) {
+      saveGoogleSheetConfig(syncUrl.trim());
+      const cleanUrl = window.location.origin + window.location.pathname;
+      window.history.replaceState({}, document.title, cleanUrl);
+      return true;
+    }
+  } catch (e) {
+    console.error('Error auto-syncing from URL:', e);
+  }
+  return false;
+}
+
+/**
+ * Generate a mobile pairing URL given a Google Sheet Web App URL
+ */
+export function generateSyncShareUrl(customUrl) {
+  const url = customUrl || getGoogleSheetConfig().url;
+  if (!url) return '';
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  return `${origin}?sync_url=${encodeURIComponent(url.trim())}`;
+}
+
+/**
  * Transform Sheet row to App Model
  */
 export function formatFromSheetRow(row) {

@@ -9,7 +9,9 @@ import {
   UploadCloud,
   DownloadCloud,
   Smartphone,
-  Check
+  Check,
+  QrCode,
+  X
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import {
@@ -17,6 +19,7 @@ import {
   saveGoogleSheetConfig,
   clearGoogleSheetConfig,
   testGoogleSheetConnection,
+  generateSyncShareUrl,
   GOOGLE_APPS_SCRIPT_TEMPLATE
 } from '../../services/googleSheets';
 
@@ -34,6 +37,8 @@ export default function GoogleSheetSync() {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [copiedScript, setCopiedScript] = useState(false);
+  const [showPairModal, setShowPairModal] = useState(false);
+  const [copiedPairUrl, setCopiedPairUrl] = useState(false);
 
   const handleSave = async () => {
     if (!sheetUrl.trim()) {
@@ -87,6 +92,24 @@ export default function GoogleSheetSync() {
     } catch (err) {
       console.error('Copy error:', err);
       showToast({ type: 'error', title: 'Copy Failed', message: 'Please copy the script manually below.' });
+    }
+  };
+
+  const pairUrl = generateSyncShareUrl(sheetUrl);
+
+  const copyPairUrlToClipboard = async () => {
+    if (!pairUrl) return;
+    try {
+      await navigator.clipboard.writeText(pairUrl);
+      setCopiedPairUrl(true);
+      showToast({
+        type: 'success',
+        title: 'Pairing Link Copied!',
+        message: 'Send it to your phone or someone else via WhatsApp or email.'
+      });
+      setTimeout(() => setCopiedPairUrl(false), 3000);
+    } catch (err) {
+      console.error('Error copying pair URL:', err);
     }
   };
 
@@ -202,6 +225,26 @@ export default function GoogleSheetSync() {
             <span>Test Ping</span>
           </button>
 
+          {/* Pair Mobile / Share Button */}
+          {sheetUrl.trim() && (
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => setShowPairModal(true)}
+              style={{
+                padding: '0.5rem 1rem',
+                fontSize: '0.85rem',
+                gap: '6px',
+                color: 'var(--color-primary-light)',
+                borderColor: 'var(--color-primary-light)'
+              }}
+              title="Pair with Mobile Phone or share with someone"
+            >
+              <Smartphone size={15} />
+              <span>Sync to Mobile</span>
+            </button>
+          )}
+
           {googleSheetStatus === 'connected' && (
             <>
               <button
@@ -301,17 +344,117 @@ export default function GoogleSheetSync() {
             borderTop: '1px solid var(--border-subtle)',
             display: 'flex',
             alignItems: 'center',
+            justifyContent: 'space-between',
             gap: '0.65rem',
             fontSize: '0.78rem',
-            color: 'var(--text-dim)'
+            color: 'var(--text-dim)',
+            flexWrap: 'wrap'
           }}
         >
-          <Smartphone size={16} color="var(--color-primary-light)" style={{ flexShrink: 0 }} />
-          <span>
-            <strong>Mobile Access:</strong> To log entries from your mobile without login, simply open the app on your phone while on the same Wi-Fi network (or your deployed URL). Both devices will instantly read and write to this same Google Sheet!
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Smartphone size={16} color="var(--color-primary-light)" style={{ flexShrink: 0 }} />
+            <span>
+              <strong>Mobile & Laptop Sync:</strong> Click <strong>Sync to Mobile</strong> above to scan the QR code or share a 1-click link!
+            </span>
+          </div>
+
+          {sheetUrl.trim() && (
+            <button
+              onClick={() => setShowPairModal(true)}
+              className="btn btn-ghost"
+              style={{ fontSize: '0.78rem', padding: '2px 6px', color: 'var(--color-primary-light)' }}
+            >
+              Open Mobile QR Code →
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Mobile Pairing & Share Modal */}
+      {showPairModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.65)',
+            backdropFilter: 'blur(5px)',
+            zIndex: 100,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem'
+          }}
+          onClick={() => setShowPairModal(false)}
+        >
+          <div
+            className="glass-card animate-scale-in"
+            style={{
+              maxWidth: '440px',
+              width: '100%',
+              padding: '1.5rem',
+              background: 'var(--bg-card-solid)',
+              border: '1px solid var(--border-card)',
+              textAlign: 'center'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <QrCode size={20} color="var(--color-primary-light)" />
+                <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-main)', textAlign: 'left' }}>
+                  Sync Mobile & Laptop
+                </h3>
+              </div>
+              <button onClick={() => setShowPairModal(false)} className="btn-icon" style={{ width: '30px', height: '30px' }}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '1.25rem', lineHeight: 1.5, textAlign: 'left' }}>
+              Open your phone camera to scan this QR code, or send the 1-click pairing link via WhatsApp. Your mobile phone will automatically connect to this exact Google Sheet!
+            </p>
+
+            {/* QR Code Container */}
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '12px',
+                background: '#ffffff',
+                borderRadius: 'var(--radius-md)',
+                boxShadow: 'var(--shadow-md)',
+                marginBottom: '1.25rem'
+              }}
+            >
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(pairUrl)}`}
+                alt="Mobile Pairing QR Code"
+                width={180}
+                height={180}
+                style={{ display: 'block' }}
+              />
+            </div>
+
+            {/* Copy Pairing Link Button */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={copyPairUrlToClipboard}
+                className="btn btn-primary"
+                style={{ width: '100%', padding: '0.6rem', gap: '6px' }}
+              >
+                {copiedPairUrl ? <Check size={16} /> : <Copy size={16} />}
+                <span>{copiedPairUrl ? 'Link Copied to Clipboard!' : 'Copy 1-Click Mobile Pairing Link'}</span>
+              </button>
+
+              <p style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginTop: '4px' }}>
+                Zero login required. Both devices will read and record to the same sheet in real time.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
