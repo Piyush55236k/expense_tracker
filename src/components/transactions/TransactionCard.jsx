@@ -52,7 +52,15 @@ export default function TransactionCard({ transaction, onEdit }) {
   };
 
   return (
-    <div className="transaction-card" style={{ position: 'relative' }}>
+    <div
+      className="transaction-card"
+      style={{
+        position: 'relative',
+        zIndex: showMenu ? 150 : 1,
+        transform: showMenu ? 'none' : undefined,
+        overflow: 'visible'
+      }}
+    >
       {/* Left: Category Icon Box & Details */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', minWidth: 0, flex: 1 }}>
         <div
@@ -112,7 +120,7 @@ export default function TransactionCard({ transaction, onEdit }) {
             <MoreVertical size={16} />
           </button>
 
-          {/* Context Dropdown Menu */}
+          {/* Context Dropdown Menu with High Z-Index & Backdrop */}
           {showMenu && (
             <>
               <div
@@ -120,26 +128,27 @@ export default function TransactionCard({ transaction, onEdit }) {
                   e.stopPropagation();
                   setShowMenu(false);
                 }}
-                style={{ position: 'fixed', inset: 0, zIndex: 55 }}
+                style={{ position: 'fixed', inset: 0, zIndex: 120 }}
               />
               <div
                 className="glass-card animate-scale-in"
                 style={{
                   position: 'absolute',
                   right: 0,
-                  top: '36px',
-                  zIndex: 60,
+                  top: '38px',
+                  zIndex: 130,
                   width: '150px',
                   padding: '4px',
                   background: 'var(--bg-card-solid)',
                   border: '1px solid var(--border-card)',
-                  boxShadow: 'var(--shadow-lg)'
+                  boxShadow: 'var(--shadow-xl)',
+                  borderRadius: 'var(--radius-md)'
                 }}
                 onClick={(e) => e.stopPropagation()}
               >
                 <button
                   className="nav-item"
-                  style={{ padding: '6px 10px', fontSize: '0.82rem', width: '100%' }}
+                  style={{ padding: '7px 10px', fontSize: '0.82rem', width: '100%' }}
                   onClick={handleEdit}
                 >
                   <Edit2 size={14} />
@@ -147,7 +156,7 @@ export default function TransactionCard({ transaction, onEdit }) {
                 </button>
                 <button
                   className="nav-item"
-                  style={{ padding: '6px 10px', fontSize: '0.82rem', width: '100%' }}
+                  style={{ padding: '7px 10px', fontSize: '0.82rem', width: '100%' }}
                   onClick={handleDuplicate}
                 >
                   <Copy size={14} />
@@ -155,7 +164,7 @@ export default function TransactionCard({ transaction, onEdit }) {
                 </button>
                 <button
                   className="nav-item"
-                  style={{ padding: '6px 10px', fontSize: '0.82rem', width: '100%', color: 'var(--color-expense)' }}
+                  style={{ padding: '7px 10px', fontSize: '0.82rem', width: '100%', color: 'var(--color-expense)' }}
                   onClick={handleDelete}
                 >
                   <Trash2 size={14} color="var(--color-expense)" />

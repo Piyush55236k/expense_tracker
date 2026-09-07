@@ -2,14 +2,14 @@ import React, { useState } from 'react';
 import { formatCurrency, formatPercentage } from '../../utils/formatters';
 import { useExpense } from '../../context/ExpenseContext';
 
-export default function DonutChart({ data = [], size = 240, strokeWidth = 32 }) {
+export default function DonutChart({ data = [], size = 240, strokeWidth = 32, centerLabel, type = 'EXPENSE' }) {
   const { settings } = useExpense();
   const [hoveredSlice, setHoveredSlice] = useState(null);
 
   if (!data || data.length === 0) {
     return (
       <div style={{ textAlign: 'center', padding: '2rem 1rem', color: 'var(--text-dim)', fontSize: '0.9rem' }}>
-        No spending data for this period.
+        {type === 'INCOME' ? 'No income data recorded yet.' : 'No spending data for this period.'}
       </div>
     );
   }
@@ -101,7 +101,7 @@ export default function DonutChart({ data = [], size = 240, strokeWidth = 32 }) 
           }}
         >
           <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-            {activeItem ? activeItem.category || activeItem.mode : 'Total Spent'}
+            {activeItem ? (activeItem.category || activeItem.mode) : (centerLabel || (type === 'INCOME' ? 'Total Income' : 'Total Spent'))}
           </span>
           <span
             style={{

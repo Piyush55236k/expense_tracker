@@ -3,6 +3,7 @@ import { User, Moon, Sun, Sparkles } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { CURRENCY_OPTIONS } from '../../services/settings';
 import SupabaseSync from './SupabaseSync';
+import GoogleSheetSync from './GoogleSheetSync';
 import CategoryManager from './CategoryManager';
 import PaymentModeManager from './PaymentModeManager';
 import BudgetConfig from './BudgetConfig';
@@ -39,6 +40,9 @@ export default function SettingsScreen() {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        {/* Google Spreadsheet Zero-Login Cloud Sync (Preferred) */}
+        <GoogleSheetSync />
+
         {/* Supabase Multi-Device Cloud Sync Card */}
         <SupabaseSync />
 

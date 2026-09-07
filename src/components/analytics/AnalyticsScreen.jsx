@@ -138,6 +138,8 @@ export default function AnalyticsScreen() {
             data={activeChartTab === 'EXPENSE' ? expenseCategoriesBreakdown : incomeCategoriesBreakdown}
             size={220}
             strokeWidth={30}
+            type={activeChartTab}
+            centerLabel={activeChartTab === 'INCOME' ? 'Total Income' : 'Total Spent'}
           />
         </div>
 

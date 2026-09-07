@@ -288,7 +288,7 @@ export default function HistoryScreen() {
             const isSelected = selectedIds.has(tx.id);
 
             return (
-              <div key={tx.id} style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+              <div key={tx.id} style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', position: 'relative', overflow: 'visible' }}>
                 {isSelectMode && (
                   <button
                     onClick={() => toggleSelectOne(tx.id)}
@@ -297,11 +297,12 @@ export default function HistoryScreen() {
                     {isSelected ? <CheckSquare size={20} /> : <Square size={20} />}
                   </button>
                 )}
-                <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ flex: 1, minWidth: 0, overflow: 'visible' }}>
                   <TransactionCard transaction={tx} />
                 </div>
               </div>
             );
+
           })}
         </div>
       )}

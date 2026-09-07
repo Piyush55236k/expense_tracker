@@ -1,10 +1,22 @@
 import React from 'react';
-import { Moon, Sun, Sparkles, Plus, Cloud, RefreshCw } from 'lucide-react';
+import { Moon, Sun, Sparkles, Plus, Cloud, RefreshCw, Undo2, FileSpreadsheet } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { getGreeting } from '../../utils/helpers';
 
 export default function Header() {
-  const { settings, setTheme, openModal, activeTab, supabaseStatus, setActiveTab } = useExpense();
+  const {
+    settings,
+    setTheme,
+    openModal,
+    activeTab,
+    supabaseStatus,
+    googleSheetStatus,
+    setActiveTab,
+    undoStack,
+    canUndo,
+    undoLastAction
+  } = useExpense();
+
   const greeting = getGreeting();
 
   const toggleTheme = () => {
@@ -36,6 +48,9 @@ export default function Header() {
     }
   };
 
+  const isConnectedToAnyCloud = googleSheetStatus === 'connected' || supabaseStatus === 'connected';
+  const isSyncingAny = googleSheetStatus === 'syncing' || supabaseStatus === 'syncing';
+
   return (
     <header className="header-glass">
       {/* Left: Page Title / Greeting */}
@@ -50,7 +65,42 @@ export default function Header() {
 
       {/* Right: Quick Action Controls */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-        {/* Cloud Sync Status Indicator */}
+        {/* Universal Undo Button */}
+        {canUndo && (
+          <button
+            onClick={undoLastAction}
+            className="btn btn-outline animate-scale-in"
+            style={{
+              padding: '0.45rem 0.75rem',
+              fontSize: '0.8rem',
+              color: 'var(--color-primary-light)',
+              borderColor: 'var(--color-primary-light)',
+              background: 'var(--color-primary-glow)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}
+            title={`Undo: ${undoStack[0]?.description || 'last action'} (Ctrl+Z)`}
+            aria-label="Undo last action"
+          >
+            <Undo2 size={15} />
+            <span>Undo</span>
+            <span
+              style={{
+                fontSize: '0.7rem',
+                padding: '1px 5px',
+                borderRadius: 'var(--radius-full)',
+                background: 'var(--color-primary)',
+                color: '#fff',
+                marginLeft: '2px'
+              }}
+            >
+              {undoStack.length}
+            </span>
+          </button>
+        )}
+
+        {/* Cloud / Google Sheet Sync Status Indicator */}
         <button
           onClick={() => setActiveTab('settings')}
           style={{
@@ -59,29 +109,40 @@ export default function Header() {
             gap: '5px',
             padding: '5px 10px',
             borderRadius: 'var(--radius-full)',
-            background: supabaseStatus === 'connected' ? 'var(--color-income-subtle)' : 'var(--bg-card)',
-            border: `1px solid ${supabaseStatus === 'connected' ? 'rgba(16, 185, 129, 0.3)' : 'var(--border-card)'}`,
-            color: supabaseStatus === 'connected' ? 'var(--color-income)' : 'var(--text-dim)',
+            background: isConnectedToAnyCloud ? 'var(--color-income-subtle)' : 'var(--bg-card)',
+            border: `1px solid ${isConnectedToAnyCloud ? 'rgba(16, 185, 129, 0.3)' : 'var(--border-card)'}`,
+            color: isConnectedToAnyCloud ? 'var(--color-income)' : 'var(--text-dim)',
             fontSize: '0.75rem',
             fontWeight: 600,
             cursor: 'pointer'
           }}
-          title={supabaseStatus === 'connected' ? 'Supabase Real-Time Cloud Sync: Active' : 'Supabase Cloud Sync: Click to setup'}
+          title={
+            googleSheetStatus === 'connected'
+              ? 'Google Spreadsheet Sync: Active (Mobile & Laptop in sync)'
+              : supabaseStatus === 'connected'
+              ? 'Supabase Cloud Sync: Active'
+              : 'Multi-Device Sync: Click to setup Google Sheet / Cloud DB'
+          }
         >
-          {supabaseStatus === 'connected' ? (
-            <>
-              <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: 'var(--color-income)' }} />
-              <span style={{ display: 'none' }} className="cloud-label-desktop">Cloud Synced</span>
-            </>
-          ) : supabaseStatus === 'syncing' ? (
+          {isSyncingAny ? (
             <>
               <RefreshCw size={12} className="animate-spin" />
               <span style={{ display: 'none' }} className="cloud-label-desktop">Syncing...</span>
             </>
+          ) : googleSheetStatus === 'connected' ? (
+            <>
+              <FileSpreadsheet size={13} color="var(--color-income)" />
+              <span style={{ display: 'none' }} className="cloud-label-desktop">Sheet Synced</span>
+            </>
+          ) : supabaseStatus === 'connected' ? (
+            <>
+              <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: 'var(--color-income)' }} />
+              <span style={{ display: 'none' }} className="cloud-label-desktop">Cloud Synced</span>
+            </>
           ) : (
             <>
               <Cloud size={13} />
-              <span style={{ display: 'none' }} className="cloud-label-desktop">Setup Cloud</span>
+              <span style={{ display: 'none' }} className="cloud-label-desktop">Setup Sync</span>
             </>
           )}
         </button>
