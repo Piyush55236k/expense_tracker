@@ -11,6 +11,7 @@ export default function Header() {
     activeTab,
     supabaseStatus,
     googleSheetStatus,
+    googleSheetSyncInfo,
     setActiveTab,
     undoStack,
     canUndo,
@@ -118,21 +119,23 @@ export default function Header() {
           }}
           title={
             googleSheetStatus === 'connected'
-              ? 'Google Spreadsheet Sync: Active (Mobile & Laptop in sync)'
+              ? `Google Sheet Database: Active (Transactions & Settings in sync${googleSheetSyncInfo?.pendingCount ? ` - ${googleSheetSyncInfo.pendingCount} saving` : ''})`
               : supabaseStatus === 'connected'
               ? 'Supabase Cloud Sync: Active'
               : 'Multi-Device Sync: Click to setup Google Sheet / Cloud DB'
           }
         >
-          {isSyncingAny ? (
+          {isSyncingAny || (googleSheetSyncInfo?.pendingCount > 0) ? (
             <>
               <RefreshCw size={12} className="animate-spin" />
-              <span style={{ display: 'none' }} className="cloud-label-desktop">Syncing...</span>
+              <span style={{ display: 'none' }} className="cloud-label-desktop">
+                {googleSheetSyncInfo?.pendingCount ? `Saving (${googleSheetSyncInfo.pendingCount})...` : 'Syncing...'}
+              </span>
             </>
           ) : googleSheetStatus === 'connected' ? (
             <>
               <FileSpreadsheet size={13} color="var(--color-income)" />
-              <span style={{ display: 'none' }} className="cloud-label-desktop">Sheet Synced</span>
+              <span style={{ display: 'none' }} className="cloud-label-desktop">Sheet DB Active</span>
             </>
           ) : supabaseStatus === 'connected' ? (
             <>

@@ -19,7 +19,8 @@ import {
 } from '../services/database';
 import {
   loadSettingsFromStorage,
-  saveSettingsToStorage
+  saveSettingsToStorage,
+  mergeSettingsWithRemote
 } from '../services/settings';
 import {
   calculateBalance,
@@ -46,13 +47,17 @@ import {
 } from '../services/supabase';
 import {
   isGoogleSheetConfigured,
+  fetchGoogleSheetDatabase,
   fetchGoogleSheetTransactions,
   insertGoogleSheetTransaction,
   updateGoogleSheetTransaction,
   deleteGoogleSheetTransaction,
   deleteMultipleGoogleSheetTransactions,
+  saveGoogleSheetSettings,
+  syncAllDatabaseToGoogleSheet,
   syncAllLocalToGoogleSheet,
-  checkAndApplyUrlSyncConfig
+  checkAndApplyUrlSyncConfig,
+  backgroundSync
 } from '../services/googleSheets';
 import { exportTransactionsToCSV } from '../utils/csv';
 import { downloadFile } from '../utils/helpers';
@@ -65,6 +70,26 @@ export function ExpenseProvider({ children }) {
   const [transactions, setTransactions] = useState(() => readTransactions());
   const [supabaseStatus, setSupabaseStatus] = useState('disconnected'); // 'connected' | 'disconnected' | 'syncing' | 'error'
   const [googleSheetStatus, setGoogleSheetStatus] = useState('disconnected'); // 'connected' | 'disconnected' | 'syncing' | 'error'
+  const [googleSheetSyncInfo, setGoogleSheetSyncInfo] = useState({ status: 'idle', pendingCount: 0, lastSyncedAt: null });
+
+  // Subscribe to background sync manager events for Google Sheets
+  useEffect(() => {
+    const unsubscribe = backgroundSync.subscribe((syncState) => {
+      setGoogleSheetSyncInfo(syncState);
+      if (isGoogleSheetConfigured()) {
+        if (syncState.status === 'syncing') {
+          setGoogleSheetStatus('syncing');
+        } else if (syncState.status === 'error') {
+          setGoogleSheetStatus('error');
+        } else {
+          setGoogleSheetStatus('connected');
+        }
+      } else {
+        setGoogleSheetStatus('disconnected');
+      }
+    });
+    return unsubscribe;
+  }, []);
 
   // 2. Universal Undo Stack
   // Stores history of reversible actions: { id, type: 'ADD'|'DELETE'|'EDIT'|'BULK_DELETE', transaction, previous, transactions, description }
@@ -140,7 +165,7 @@ export function ExpenseProvider({ children }) {
           deleteTransaction(lastAction.transaction.id);
           setTransactions(readTransactions());
           if (isSupabaseConfigured()) deleteSupabaseTransaction(lastAction.transaction.id);
-          if (isGoogleSheetConfigured()) deleteGoogleSheetTransaction(lastAction.transaction.id);
+          if (isGoogleSheetConfigured()) backgroundSync.enqueue(() => deleteGoogleSheetTransaction(lastAction.transaction.id), 'Undo add');
           showToast({
             type: 'info',
             title: 'Undone',
@@ -150,7 +175,7 @@ export function ExpenseProvider({ children }) {
           insertTransaction(lastAction.transaction);
           setTransactions(readTransactions());
           if (isSupabaseConfigured()) insertSupabaseTransaction(lastAction.transaction);
-          if (isGoogleSheetConfigured()) insertGoogleSheetTransaction(lastAction.transaction);
+          if (isGoogleSheetConfigured()) backgroundSync.enqueue(() => insertGoogleSheetTransaction(lastAction.transaction), 'Undo delete');
           showToast({
             type: 'info',
             title: 'Restored',
@@ -160,7 +185,7 @@ export function ExpenseProvider({ children }) {
           updateTransaction(lastAction.previous);
           setTransactions(readTransactions());
           if (isSupabaseConfigured()) updateSupabaseTransaction(lastAction.previous);
-          if (isGoogleSheetConfigured()) updateGoogleSheetTransaction(lastAction.previous);
+          if (isGoogleSheetConfigured()) backgroundSync.enqueue(() => updateGoogleSheetTransaction(lastAction.previous), 'Undo edit');
           showToast({
             type: 'info',
             title: 'Changes Reverted',
@@ -171,7 +196,7 @@ export function ExpenseProvider({ children }) {
           const restored = readTransactions();
           setTransactions(restored);
           if (isSupabaseConfigured()) syncAllLocalToSupabase(restored);
-          if (isGoogleSheetConfigured()) syncAllLocalToGoogleSheet(restored);
+          if (isGoogleSheetConfigured()) backgroundSync.enqueue(() => syncAllLocalToGoogleSheet(restored), 'Undo bulk delete');
           showToast({
             type: 'info',
             title: 'Restored',
@@ -203,8 +228,8 @@ export function ExpenseProvider({ children }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [undoLastAction, undoStack.length]);
 
-  // 7. Google Sheets Sync Methods
-  const syncWithGoogleSheet = useCallback(async () => {
+  // 7. Google Sheets Database Sync Methods
+  const syncWithGoogleSheet = useCallback(async (options = {}) => {
     if (!isGoogleSheetConfigured()) {
       setGoogleSheetStatus('disconnected');
       return;
@@ -212,33 +237,72 @@ export function ExpenseProvider({ children }) {
 
     try {
       setGoogleSheetStatus('syncing');
-      const remoteRecords = await fetchGoogleSheetTransactions();
-      if (remoteRecords && Array.isArray(remoteRecords)) {
-        if (remoteRecords.length > 0) {
-          writeTransactions(remoteRecords);
-          setTransactions(remoteRecords);
+      const remote = await fetchGoogleSheetDatabase();
+      if (remote) {
+        // 1. Sync transactions database
+        if (Array.isArray(remote.transactions)) {
+          if (remote.transactions.length > 0 || readTransactions().length === 0) {
+            writeTransactions(remote.transactions);
+            setTransactions(remote.transactions);
+          }
         }
+
+        // 2. Sync settings database
+        if (remote.settings && Object.keys(remote.settings).length > 0) {
+          setSettingsState(prev => {
+            const merged = mergeSettingsWithRemote(prev, remote.settings);
+            saveSettingsToStorage(merged);
+            return merged;
+          });
+        }
+
         setGoogleSheetStatus('connected');
+        if (options.notify) {
+          showToast({
+            type: 'success',
+            title: 'Google Sheet Synchronized',
+            message: `Loaded ${remote.transactions?.length || 0} transactions and settings from Spreadsheet.`
+          });
+        }
       }
     } catch (err) {
-      console.error('Google Sheet sync error:', err);
+      console.error('Google Sheet database sync error:', err);
       setGoogleSheetStatus('error');
+      if (options.notify) {
+        showToast({
+          type: 'error',
+          title: 'Sync Error',
+          message: err.message || 'Could not fetch database from Google Sheet.'
+        });
+      }
     }
-  }, []);
+  }, [showToast]);
 
   const pushLocalToGoogleSheet = useCallback(async () => {
     if (!isGoogleSheetConfigured()) return;
     try {
       setGoogleSheetStatus('syncing');
       const local = readTransactions();
-      await syncAllLocalToGoogleSheet(local);
-      await syncWithGoogleSheet();
-      showToast({ type: 'success', title: 'Google Sheet Updated', message: `${local.length} transactions saved to Spreadsheet.` });
+      await syncAllDatabaseToGoogleSheet({
+        transactions: local,
+        settings
+      });
+      setGoogleSheetStatus('connected');
+      showToast({
+        type: 'success',
+        title: 'Google Sheet Database Updated',
+        message: `${local.length} transactions and all preferences written to Spreadsheet.`
+      });
     } catch (err) {
       console.error('Error pushing local data to Google Sheet:', err);
-      showToast({ type: 'error', title: 'Upload Failed', message: err.message || 'Could not upload to Google Sheet.' });
+      setGoogleSheetStatus('error');
+      showToast({
+        type: 'error',
+        title: 'Upload Failed',
+        message: err.message || 'Could not upload database to Google Sheet.'
+      });
     }
-  }, [showToast, syncWithGoogleSheet]);
+  }, [settings, showToast]);
 
   // Auto-sync Google Sheet on window focus
   useEffect(() => {
@@ -371,9 +435,9 @@ export function ExpenseProvider({ children }) {
         description: `Added ${created.type === 'INCOME' ? 'Income' : 'Expense'} ${settings.currencySymbol}${Number(created.amount).toFixed(2)}`
       }, ...prev.slice(0, 19)]);
 
-      // Background Sync to Cloud DBs
+      // Background Sync to Cloud DBs (Optimistic & Non-blocking)
       if (isGoogleSheetConfigured()) {
-        insertGoogleSheetTransaction(created);
+        backgroundSync.enqueue(() => insertGoogleSheetTransaction(created), `Insert tx ${created.id}`);
       }
       if (isSupabaseConfigured()) {
         insertSupabaseTransaction(created).catch(err => {
@@ -430,9 +494,9 @@ export function ExpenseProvider({ children }) {
           }, ...prev.slice(0, 19)]);
         }
 
-        // Background Sync
+        // Background Sync (Optimistic & Non-blocking)
         if (isGoogleSheetConfigured()) {
-          updateGoogleSheetTransaction(updated);
+          backgroundSync.enqueue(() => updateGoogleSheetTransaction(updated), `Update tx ${updated.id}`);
         }
         if (isSupabaseConfigured()) {
           updateSupabaseTransaction(updated).catch(err => {
@@ -476,9 +540,9 @@ export function ExpenseProvider({ children }) {
           description: `Deleted ${deleted.category} (${settings.currencySymbol}${Number(deleted.amount).toFixed(2)})`
         }, ...prev.slice(0, 19)]);
 
-        // Background Sync
+        // Background Sync (Optimistic & Non-blocking)
         if (isGoogleSheetConfigured()) {
-          deleteGoogleSheetTransaction(id);
+          backgroundSync.enqueue(() => deleteGoogleSheetTransaction(id), `Delete tx ${id}`);
         }
         if (isSupabaseConfigured()) {
           deleteSupabaseTransaction(id).catch(err => {
@@ -520,9 +584,9 @@ export function ExpenseProvider({ children }) {
       description: `Bulk deleted ${count} items`
     }, ...prev.slice(0, 19)]);
 
-    // Background Sync
+    // Background Sync (Optimistic & Non-blocking)
     if (isGoogleSheetConfigured()) {
-      deleteMultipleGoogleSheetTransactions(ids);
+      backgroundSync.enqueue(() => deleteMultipleGoogleSheetTransactions(ids), `Bulk delete ${ids.length} txs`);
     }
     if (isSupabaseConfigured()) {
       deleteMultipleSupabaseTransactions(ids).catch(err => {
@@ -545,6 +609,12 @@ export function ExpenseProvider({ children }) {
     setSettingsState(prev => {
       const updated = { ...prev, ...newPartialSettings };
       saveSettingsToStorage(updated);
+
+      // Debounced background sync to Google Sheet Settings tab
+      if (isGoogleSheetConfigured()) {
+        backgroundSync.debounceSettingsSync(updated);
+      }
+
       return updated;
     });
     showToast({
@@ -623,7 +693,10 @@ export function ExpenseProvider({ children }) {
       setTransactions(updatedTxs);
 
       if (isGoogleSheetConfigured()) {
-        syncAllLocalToGoogleSheet(updatedTxs);
+        syncAllDatabaseToGoogleSheet({
+          transactions: updatedTxs,
+          settings: payload.settings || settings
+        });
       }
       if (isSupabaseConfigured()) {
         syncAllLocalToSupabase(updatedTxs);
@@ -679,6 +752,7 @@ export function ExpenseProvider({ children }) {
     historyFilters,
     supabaseStatus,
     googleSheetStatus,
+    googleSheetSyncInfo,
 
     // Undo System
     undoStack,

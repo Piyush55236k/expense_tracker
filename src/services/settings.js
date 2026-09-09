@@ -110,3 +110,88 @@ export function saveSettingsToStorage(settings) {
     return false;
   }
 }
+
+/**
+ * Serialize settings object to key-value format for Google Sheets Settings tab
+ */
+export function serializeSettingsForSheet(settings) {
+  const s = { ...DEFAULT_SETTINGS, ...(settings || {}) };
+  return {
+    userName: String(s.userName || 'Alex'),
+    currency: String(s.currency || 'INR'),
+    currencySymbol: String(s.currencySymbol || '₹'),
+    monthlyBudget: String(s.monthlyBudget !== undefined ? s.monthlyBudget : '25000'),
+    budgetAlertThreshold: String(s.budgetAlertThreshold !== undefined ? s.budgetAlertThreshold : '85'),
+    theme: String(s.theme || 'dark'),
+    hideBalanceOnOpen: String(Boolean(s.hideBalanceOnOpen)),
+    expenseCategories: JSON.stringify(s.expenseCategories || DEFAULT_EXPENSE_CATEGORIES),
+    incomeCategories: JSON.stringify(s.incomeCategories || DEFAULT_INCOME_CATEGORIES),
+    paymentModes: JSON.stringify(s.paymentModes || DEFAULT_PAYMENT_MODES),
+    quickAddPresets: JSON.stringify(s.quickAddPresets || QUICK_ADD_PRESETS)
+  };
+}
+
+/**
+ * Deserialize key-value map from Google Sheets Settings tab back to settings object
+ */
+export function deserializeSettingsFromSheet(sheetSettings) {
+  if (!sheetSettings || typeof sheetSettings !== 'object') return null;
+  const result = {};
+  if (sheetSettings.userName) result.userName = String(sheetSettings.userName);
+  if (sheetSettings.currency) result.currency = String(sheetSettings.currency);
+  if (sheetSettings.currencySymbol) result.currencySymbol = String(sheetSettings.currencySymbol);
+  if (sheetSettings.monthlyBudget !== undefined && sheetSettings.monthlyBudget !== '') {
+    result.monthlyBudget = Number(sheetSettings.monthlyBudget) || 25000;
+  }
+  if (sheetSettings.budgetAlertThreshold !== undefined && sheetSettings.budgetAlertThreshold !== '') {
+    result.budgetAlertThreshold = Number(sheetSettings.budgetAlertThreshold) || 85;
+  }
+  if (sheetSettings.theme) result.theme = String(sheetSettings.theme);
+  if (sheetSettings.hideBalanceOnOpen !== undefined) {
+    result.hideBalanceOnOpen = sheetSettings.hideBalanceOnOpen === true || sheetSettings.hideBalanceOnOpen === 'true';
+  }
+
+  const parseJsonField = (val, fallback) => {
+    if (!val) return fallback;
+    if (typeof val === 'object' && Array.isArray(val)) return val;
+    try {
+      const parsed = typeof val === 'string' ? JSON.parse(val) : val;
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : fallback;
+    } catch (e) {
+      return fallback;
+    }
+  };
+
+  if (sheetSettings.expenseCategories) {
+    result.expenseCategories = parseJsonField(sheetSettings.expenseCategories, DEFAULT_EXPENSE_CATEGORIES);
+  }
+  if (sheetSettings.incomeCategories) {
+    result.incomeCategories = parseJsonField(sheetSettings.incomeCategories, DEFAULT_INCOME_CATEGORIES);
+  }
+  if (sheetSettings.paymentModes) {
+    result.paymentModes = parseJsonField(sheetSettings.paymentModes, DEFAULT_PAYMENT_MODES);
+  }
+  if (sheetSettings.quickAddPresets) {
+    result.quickAddPresets = parseJsonField(sheetSettings.quickAddPresets, QUICK_ADD_PRESETS);
+  }
+
+  return result;
+}
+
+/**
+ * Safely merge remote settings with current local settings and defaults
+ */
+export function mergeSettingsWithRemote(localSettings, remoteSettings) {
+  if (!remoteSettings) return localSettings || DEFAULT_SETTINGS;
+  const base = localSettings || DEFAULT_SETTINGS;
+  return {
+    ...DEFAULT_SETTINGS,
+    ...base,
+    ...remoteSettings,
+    expenseCategories: remoteSettings.expenseCategories?.length ? remoteSettings.expenseCategories : (base.expenseCategories?.length ? base.expenseCategories : DEFAULT_EXPENSE_CATEGORIES),
+    incomeCategories: remoteSettings.incomeCategories?.length ? remoteSettings.incomeCategories : (base.incomeCategories?.length ? base.incomeCategories : DEFAULT_INCOME_CATEGORIES),
+    paymentModes: remoteSettings.paymentModes?.length ? remoteSettings.paymentModes : (base.paymentModes?.length ? base.paymentModes : DEFAULT_PAYMENT_MODES),
+    quickAddPresets: remoteSettings.quickAddPresets?.length ? remoteSettings.quickAddPresets : (base.quickAddPresets?.length ? base.quickAddPresets : QUICK_ADD_PRESETS)
+  };
+}
+

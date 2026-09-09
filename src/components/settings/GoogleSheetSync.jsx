@@ -11,7 +11,9 @@ import {
   Smartphone,
   Check,
   QrCode,
-  X
+  X,
+  Layers,
+  Zap
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import {
@@ -26,6 +28,7 @@ import {
 export default function GoogleSheetSync() {
   const {
     googleSheetStatus,
+    googleSheetSyncInfo,
     syncWithGoogleSheet,
     pushLocalToGoogleSheet,
     transactions,
@@ -58,10 +61,10 @@ export default function GoogleSheetSync() {
     if (res.success) {
       showToast({
         type: 'success',
-        title: 'Connected to Google Sheet!',
-        message: 'Mobile and laptop can now sync entries without login.'
+        title: 'Connected to Google Sheet Database!',
+        message: 'Reading and writing transactions & settings from your spreadsheet.'
       });
-      syncWithGoogleSheet();
+      syncWithGoogleSheet({ notify: true });
     } else {
       showToast({
         type: 'error',
@@ -85,8 +88,8 @@ export default function GoogleSheetSync() {
       setCopiedScript(true);
       showToast({
         type: 'success',
-        title: 'Script Copied!',
-        message: 'Paste it in Google Sheets > Extensions > Apps Script.'
+        title: 'V2 Database Script Copied!',
+        message: 'Paste it in Google Sheets > Extensions > Apps Script and Deploy as Web App.'
       });
       setTimeout(() => setCopiedScript(false), 3000);
     } catch (err) {
@@ -113,6 +116,11 @@ export default function GoogleSheetSync() {
     }
   };
 
+  const pendingCount = googleSheetSyncInfo?.pendingCount || 0;
+  const lastSynced = googleSheetSyncInfo?.lastSyncedAt
+    ? new Date(googleSheetSyncInfo.lastSyncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    : null;
+
   return (
     <div className="glass-card" style={{ padding: '1.5rem', position: 'relative' }}>
       {/* Header */}
@@ -120,8 +128,8 @@ export default function GoogleSheetSync() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
           <div
             style={{
-              width: '36px',
-              height: '36px',
+              width: '38px',
+              height: '38px',
               borderRadius: 'var(--radius-sm)',
               background: 'rgba(16, 185, 129, 0.15)',
               border: '1px solid rgba(16, 185, 129, 0.3)',
@@ -131,62 +139,120 @@ export default function GoogleSheetSync() {
               color: 'var(--color-income)'
             }}
           >
-            <FileSpreadsheet size={20} />
+            <FileSpreadsheet size={22} />
           </div>
           <div>
-            <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-main)' }}>
-              Google Spreadsheet Database (Zero Login)
-            </h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                Google Spreadsheet Database
+              </h3>
+              <span
+                style={{
+                  fontSize: '0.68rem',
+                  padding: '2px 7px',
+                  borderRadius: 'var(--radius-full)',
+                  background: 'rgba(99, 102, 241, 0.15)',
+                  border: '1px solid rgba(99, 102, 241, 0.3)',
+                  color: 'var(--color-primary-light)',
+                  fontWeight: 700
+                }}
+              >
+                Transactions + Settings
+              </span>
+            </div>
             <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              Sync Mobile phone and Laptop seamlessly to a single Google Sheet without requiring any account login.
+              Read & write transactions and all preferences directly to your Google Spreadsheet with zero latency.
             </p>
           </div>
         </div>
 
         {/* Status Badge */}
-        <div
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '4px 10px',
-            borderRadius: 'var(--radius-full)',
-            background: googleSheetStatus === 'connected' ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-input)',
-            border: `1px solid ${googleSheetStatus === 'connected' ? 'rgba(16, 185, 129, 0.4)' : 'var(--border-card)'}`,
-            fontSize: '0.75rem',
-            fontWeight: 600,
-            color: googleSheetStatus === 'connected' ? 'var(--color-income)' : 'var(--text-dim)'
-          }}
-        >
-          {googleSheetStatus === 'connected' ? (
-            <>
-              <CheckCircle2 size={13} color="var(--color-income)" />
-              <span>Connected & Synchronized</span>
-            </>
-          ) : googleSheetStatus === 'syncing' ? (
-            <>
-              <RefreshCw size={13} className="animate-spin" />
-              <span>Syncing Data...</span>
-            </>
-          ) : googleSheetStatus === 'error' ? (
-            <>
-              <AlertCircle size={13} color="var(--color-expense)" />
-              <span style={{ color: 'var(--color-expense)' }}>Sync Error</span>
-            </>
-          ) : (
-            <>
-              <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: 'var(--text-dim)' }} />
-              <span>Not Connected</span>
-            </>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {pendingCount > 0 && (
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '4px 10px',
+                borderRadius: 'var(--radius-full)',
+                background: 'rgba(234, 179, 8, 0.15)',
+                border: '1px solid rgba(234, 179, 8, 0.3)',
+                fontSize: '0.74rem',
+                fontWeight: 600,
+                color: '#eab308'
+              }}
+            >
+              <RefreshCw size={12} className="animate-spin" />
+              <span>Queue: {pendingCount} writing...</span>
+            </span>
           )}
+
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '4px 10px',
+              borderRadius: 'var(--radius-full)',
+              background: googleSheetStatus === 'connected' ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-input)',
+              border: `1px solid ${googleSheetStatus === 'connected' ? 'rgba(16, 185, 129, 0.4)' : 'var(--border-card)'}`,
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              color: googleSheetStatus === 'connected' ? 'var(--color-income)' : 'var(--text-dim)'
+            }}
+          >
+            {googleSheetStatus === 'connected' ? (
+              <>
+                <CheckCircle2 size={13} color="var(--color-income)" />
+                <span>Connected & Database Active</span>
+              </>
+            ) : googleSheetStatus === 'syncing' ? (
+              <>
+                <RefreshCw size={13} className="animate-spin" />
+                <span>Syncing Database...</span>
+              </>
+            ) : googleSheetStatus === 'error' ? (
+              <>
+                <AlertCircle size={13} color="var(--color-expense)" />
+                <span style={{ color: 'var(--color-expense)' }}>Sync Error</span>
+              </>
+            ) : (
+              <>
+                <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: 'var(--text-dim)' }} />
+                <span>Not Connected</span>
+              </>
+            )}
+          </div>
         </div>
+      </div>
+
+      {/* Latency Reducer Feature Callout */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '8px 12px',
+          background: 'rgba(99, 102, 241, 0.08)',
+          border: '1px solid rgba(99, 102, 241, 0.2)',
+          borderRadius: 'var(--radius-md)',
+          marginBottom: '1.25rem',
+          fontSize: '0.78rem',
+          color: 'var(--text-muted)'
+        }}
+      >
+        <Zap size={15} color="var(--color-primary-light)" style={{ flexShrink: 0 }} />
+        <span>
+          <strong style={{ color: 'var(--color-primary-light)' }}>Instant Zero-Lag Performance:</strong> All additions, edits, deletes, and settings changes update the UI in <strong>0ms</strong> immediately, while synchronization with your Google Sheet happens smoothly in the background.
+        </span>
       </div>
 
       {/* URL Input Form */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', marginBottom: '1.25rem' }}>
         <div className="input-group">
           <label className="input-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>Google Apps Script Web App URL</span>
+            <span>Google Apps Script Web App Deployment URL</span>
             {currentConfig.source === 'env' && (
               <span style={{ color: 'var(--color-primary-light)', fontSize: '0.72rem' }}>Configured via .env</span>
             )}
@@ -211,7 +277,7 @@ export default function GoogleSheetSync() {
             style={{ padding: '0.5rem 1.1rem', fontSize: '0.85rem' }}
           >
             {testing ? <RefreshCw size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-            <span>Save & Connect</span>
+            <span>Save & Connect DB</span>
           </button>
 
           <button
@@ -222,7 +288,7 @@ export default function GoogleSheetSync() {
             style={{ padding: '0.5rem 0.9rem', fontSize: '0.85rem' }}
           >
             {testing ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-            <span>Test Ping</span>
+            <span>Test Connection</span>
           </button>
 
           {/* Pair Mobile / Share Button */}
@@ -251,26 +317,33 @@ export default function GoogleSheetSync() {
                 type="button"
                 className="btn btn-outline"
                 onClick={pushLocalToGoogleSheet}
-                title="Upload all local transactions to your Google Sheet"
+                title="Write all local transactions and settings to your Google Spreadsheet"
                 style={{ padding: '0.5rem 0.9rem', fontSize: '0.85rem', gap: '5px' }}
               >
                 <UploadCloud size={14} />
-                <span>Upload ({transactions.length})</span>
+                <span>Upload Database ({transactions.length} txs)</span>
               </button>
 
               <button
                 type="button"
                 className="btn btn-outline"
-                onClick={syncWithGoogleSheet}
-                title="Pull latest transactions from Google Sheet"
+                onClick={() => syncWithGoogleSheet({ notify: true })}
+                title="Fetch latest transactions and settings from your Google Spreadsheet"
                 style={{ padding: '0.5rem 0.9rem', fontSize: '0.85rem', gap: '5px' }}
               >
                 <DownloadCloud size={14} />
-                <span>Fetch Latest</span>
+                <span>Fetch Latest DB</span>
               </button>
             </>
           )}
         </div>
+
+        {/* Sync Info / Last Synced Timestamp */}
+        {lastSynced && (
+          <div style={{ fontSize: '0.74rem', color: 'var(--text-dim)', marginTop: '2px' }}>
+            Last synchronized with Google Sheet at: <strong>{lastSynced}</strong>
+          </div>
+        )}
 
         {/* Connection Test Result */}
         {testResult && (
@@ -288,7 +361,10 @@ export default function GoogleSheetSync() {
             }}
           >
             {testResult.success ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
-            <span>{testResult.message}</span>
+            <span>
+              {testResult.message}
+              {testResult.count !== undefined && ` (${testResult.count} transactions in sheet)`}
+            </span>
           </div>
         )}
       </div>
@@ -302,10 +378,13 @@ export default function GoogleSheetSync() {
           padding: '1rem 1.25rem'
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-          <span style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-main)' }}>
-            Setup Guide: Free Google Sheet DB in 1 Minute
-          </span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Layers size={16} color="var(--color-primary-light)" />
+            <span style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-main)' }}>
+              Setup Guide: Full Google Sheet Database (v2.0)
+            </span>
+          </div>
           <button
             type="button"
             onClick={copyScriptToClipboard}
@@ -313,13 +392,13 @@ export default function GoogleSheetSync() {
             style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem', gap: '4px' }}
           >
             {copiedScript ? <Check size={14} /> : <Copy size={14} />}
-            <span>{copiedScript ? 'Copied Script!' : 'Copy Apps Script Code'}</span>
+            <span>{copiedScript ? 'Copied v2.0 Script!' : 'Copy Apps Script Code'}</span>
           </button>
         </div>
 
         <ol style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.6, paddingLeft: '1.25rem' }}>
           <li>
-            Create a new Google Sheet at{' '}
+            Open or create a Google Sheet at{' '}
             <a
               href="https://sheets.new"
               target="_blank"
@@ -329,12 +408,17 @@ export default function GoogleSheetSync() {
               sheets.new <ExternalLink size={11} style={{ display: 'inline' }} />
             </a>
           </li>
-          <li>In the menu bar, click <strong>Extensions &gt; Apps Script</strong>.</li>
-          <li>Delete any code in the editor, and click <strong>Copy Apps Script Code</strong> above to paste the script.</li>
-          <li>Click <strong>Deploy &gt; New deployment</strong> (top right).</li>
-          <li>Select type: <strong>Web app</strong>, set <em>Execute as: "Me"</em> and <em>Who has access: "Anyone"</em>.</li>
-          <li>Click <strong>Deploy</strong> and copy the <strong>Web app URL</strong> into the field above!</li>
+          <li>In the top menu bar, click <strong>Extensions &gt; Apps Script</strong>.</li>
+          <li>Delete any existing code in the editor, and click <strong>Copy Apps Script Code</strong> above to paste.</li>
+          <li>Click <strong>Deploy &gt; New deployment</strong> (blue button, top right).</li>
+          <li>Click the gear icon next to "Select type" &gt; choose <strong>Web app</strong>.</li>
+          <li>Set Description: "Expense Tracker Database", <em>Execute as: "Me"</em>, and <em>Who has access: "Anyone"</em>.</li>
+          <li>Click <strong>Deploy</strong>, grant Google permissions, and paste the <strong>Web app URL</strong> above!</li>
         </ol>
+
+        <div style={{ marginTop: '0.65rem', padding: '0.6rem 0.85rem', background: 'var(--bg-card)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+          💡 <strong>What gets created in your spreadsheet:</strong> The script will automatically maintain two neat tabs: <strong>Transactions</strong> (all income & expense entries) and <strong>Settings</strong> (currency, monthly budget, alert thresholds, categories, and theme).
+        </div>
 
         {/* Mobile Sync Tip */}
         <div
@@ -354,7 +438,7 @@ export default function GoogleSheetSync() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <Smartphone size={16} color="var(--color-primary-light)" style={{ flexShrink: 0 }} />
             <span>
-              <strong>Mobile & Laptop Sync:</strong> Click <strong>Sync to Mobile</strong> above to scan the QR code or share a 1-click link!
+              <strong>Multi-Device Zero-Login:</strong> Open <strong>Sync to Mobile</strong> to scan the QR code or send a 1-click link to your phone!
             </span>
           </div>
 
@@ -411,7 +495,7 @@ export default function GoogleSheetSync() {
             </div>
 
             <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '1.25rem', lineHeight: 1.5, textAlign: 'left' }}>
-              Open your phone camera to scan this QR code, or send the 1-click pairing link via WhatsApp. Your mobile phone will automatically connect to this exact Google Sheet!
+              Scan this QR code with your phone camera, or send the 1-click link. Your phone will instantly connect to this exact Google Sheet database without needing any login!
             </p>
 
             {/* QR Code Container */}
@@ -449,7 +533,7 @@ export default function GoogleSheetSync() {
               </button>
 
               <p style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginTop: '4px' }}>
-                Zero login required. Both devices will read and record to the same sheet in real time.
+                Both devices will read and write to the same spreadsheet database in real time.
               </p>
             </div>
           </div>

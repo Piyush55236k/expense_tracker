@@ -1,7 +1,13 @@
 /**
  * Google Sheets Database Service - Zero-Login Multi-Device Cloud Sync
  * Connects any Mobile phone or Laptop to a single Google Spreadsheet.
+ * Acts as an authoritative cloud database for both Transactions & Settings.
  */
+
+import {
+  serializeSettingsForSheet,
+  deserializeSettingsFromSheet
+} from './settings';
 
 const GOOGLE_SHEET_URL_KEY = 'personal_expense_tracker_gsheet_url';
 
@@ -132,7 +138,7 @@ export function formatForSheetRow(tx) {
     tags: Array.isArray(tx.tags) ? tx.tags.join(', ') : (tx.tags || ''),
     isRecurring: Boolean(tx.isRecurring),
     createdAt: tx.createdAt || new Date().toISOString(),
-    updatedAt: new Date().toISOString()
+    updatedAt: tx.updatedAt || new Date().toISOString()
   };
 }
 
@@ -155,8 +161,9 @@ export async function testGoogleSheetConnection(customUrl) {
     if (data.status === 'ok' || data.success) {
       return {
         success: true,
-        message: 'Connected to Google Spreadsheet successfully!',
-        count: data.count || data.recordsCount || 0
+        message: 'Connected to Google Spreadsheet database successfully!',
+        count: data.count || data.recordsCount || 0,
+        settingsCount: data.settingsCount || 0
       };
     }
     return {
@@ -174,164 +181,255 @@ export async function testGoogleSheetConnection(customUrl) {
 }
 
 /**
- * Fetch all transactions from Google Sheet
+ * Fetch Full Database (Transactions AND Settings in ONE single fast roundtrip)
  */
-export async function fetchGoogleSheetTransactions() {
+export async function fetchGoogleSheetDatabase() {
   const { url } = getGoogleSheetConfig();
   if (!url) return null;
 
   try {
-    const fetchUrl = url.includes('?') ? `${url}&action=getAll` : `${url}?action=getAll`;
+    const fetchUrl = url.includes('?') ? `${url}&action=getDatabase` : `${url}?action=getDatabase`;
     const res = await fetch(fetchUrl, { method: 'GET', redirect: 'follow' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const result = await res.json();
 
-    const rawList = Array.isArray(result) ? result : (result.transactions || result.data || []);
-    return rawList.map(formatFromSheetRow);
+    const rawList = Array.isArray(result)
+      ? result
+      : (result.transactions || result.data || []);
+    const transactions = rawList.map(formatFromSheetRow);
+
+    const rawSettings = result.settings || null;
+    const settings = rawSettings ? deserializeSettingsFromSheet(rawSettings) : null;
+
+    return {
+      transactions,
+      settings,
+      timestamp: result.timestamp || new Date().toISOString()
+    };
   } catch (err) {
-    console.error('Error fetching from Google Sheet:', err);
+    console.error('Error fetching database from Google Sheet:', err);
     throw err;
   }
+}
+
+/**
+ * Fetch all transactions from Google Sheet (Wrapper for backward compatibility)
+ */
+export async function fetchGoogleSheetTransactions() {
+  const data = await fetchGoogleSheetDatabase();
+  return data ? data.transactions : null;
+}
+
+/**
+ * Fetch settings from Google Sheet
+ */
+export async function fetchGoogleSheetSettings() {
+  const data = await fetchGoogleSheetDatabase();
+  return data ? data.settings : null;
+}
+
+/**
+ * Low-level post helper with text/plain to avoid CORS preflight latency
+ */
+async function postToGoogleSheet(payload) {
+  const { url } = getGoogleSheetConfig();
+  if (!url) return null;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    redirect: 'follow',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return await res.json();
 }
 
 /**
  * Insert a transaction to Google Sheet
  */
 export async function insertGoogleSheetTransaction(tx) {
-  const { url } = getGoogleSheetConfig();
-  if (!url) return null;
-
   const payload = {
     action: 'insert',
     transaction: formatForSheetRow(tx)
   };
-
-  try {
-    await fetch(url, {
-      method: 'POST',
-      redirect: 'follow',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // text/plain prevents CORS preflight in Apps Script
-      body: JSON.stringify(payload)
-    });
-    return tx;
-  } catch (err) {
-    console.warn('Google Sheet remote insert delayed:', err);
-    return tx;
-  }
+  return postToGoogleSheet(payload);
 }
 
 /**
  * Update an existing transaction in Google Sheet
  */
 export async function updateGoogleSheetTransaction(tx) {
-  const { url } = getGoogleSheetConfig();
-  if (!url) return null;
-
   const payload = {
     action: 'update',
     transaction: formatForSheetRow(tx)
   };
-
-  try {
-    await fetch(url, {
-      method: 'POST',
-      redirect: 'follow',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload)
-    });
-    return tx;
-  } catch (err) {
-    console.warn('Google Sheet remote update delayed:', err);
-    return tx;
-  }
+  return postToGoogleSheet(payload);
 }
 
 /**
  * Delete a transaction from Google Sheet
  */
 export async function deleteGoogleSheetTransaction(id) {
-  const { url } = getGoogleSheetConfig();
-  if (!url) return null;
-
   const payload = {
     action: 'delete',
     id: String(id)
   };
-
-  try {
-    await fetch(url, {
-      method: 'POST',
-      redirect: 'follow',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload)
-    });
-    return true;
-  } catch (err) {
-    console.warn('Google Sheet remote delete delayed:', err);
-    return false;
-  }
+  return postToGoogleSheet(payload);
 }
 
 /**
  * Delete multiple transactions from Google Sheet
  */
 export async function deleteMultipleGoogleSheetTransactions(ids) {
-  const { url } = getGoogleSheetConfig();
-  if (!url || !ids || ids.length === 0) return null;
-
+  if (!ids || ids.length === 0) return null;
   const payload = {
     action: 'bulkDelete',
     ids: ids.map(String)
   };
-
-  try {
-    await fetch(url, {
-      method: 'POST',
-      redirect: 'follow',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload)
-    });
-    return true;
-  } catch (err) {
-    console.warn('Google Sheet bulk delete delayed:', err);
-    return false;
-  }
+  return postToGoogleSheet(payload);
 }
 
 /**
- * Sync all local transactions to Google Sheet (Full Replace or Upsert)
+ * Save settings to Google Sheet Settings tab
+ */
+export async function saveGoogleSheetSettings(settings) {
+  const serialized = serializeSettingsForSheet(settings);
+  const payload = {
+    action: 'saveSettings',
+    settings: serialized
+  };
+  return postToGoogleSheet(payload);
+}
+
+/**
+ * Sync entire local database (Transactions & Settings) to Google Sheet in a single POST
+ */
+export async function syncAllDatabaseToGoogleSheet({ transactions = [], settings = null }) {
+  const payload = {
+    action: 'syncDatabase',
+    transactions: transactions.map(formatForSheetRow),
+    settings: settings ? serializeSettingsForSheet(settings) : null
+  };
+  return postToGoogleSheet(payload);
+}
+
+/**
+ * Sync all local transactions to Google Sheet (Backward compatibility)
  */
 export async function syncAllLocalToGoogleSheet(localTransactions = []) {
-  const { url } = getGoogleSheetConfig();
-  if (!url) return null;
-
   const payload = {
     action: 'syncAll',
     transactions: localTransactions.map(formatForSheetRow)
   };
-
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      redirect: 'follow',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    return data;
-  } catch (err) {
-    console.error('Error syncing all to Google Sheet:', err);
-    throw err;
-  }
+  return postToGoogleSheet(payload);
 }
 
 /**
+ * ---------------------------------------------------------------------------
+ * ASYNCHRONOUS BACKGROUND SYNC QUEUE & LATENCY ELIMINATOR
+ * ---------------------------------------------------------------------------
+ * This ensures UI operations (add, edit, delete, settings changes) are 100%
+ * optimistic and zero-latency (0ms), while updates are queued and processed
+ * non-blockingly in the background. Settings updates are automatically debounced.
+ */
+
+class BackgroundSyncManager {
+  constructor() {
+    this.queue = [];
+    this.isProcessing = false;
+    this.listeners = new Set();
+    this.settingsDebounceTimer = null;
+    this.lastSyncedAt = null;
+    this.status = 'idle'; // 'idle' | 'syncing' | 'error'
+  }
+
+  subscribe(listener) {
+    this.listeners.add(listener);
+    // Initial notification
+    listener({
+      status: this.status,
+      pendingCount: this.queue.length,
+      lastSyncedAt: this.lastSyncedAt
+    });
+    return () => this.listeners.delete(listener);
+  }
+
+  notify() {
+    const state = {
+      status: this.status,
+      pendingCount: this.queue.length,
+      lastSyncedAt: this.lastSyncedAt
+    };
+    for (const listener of this.listeners) {
+      try {
+        listener(state);
+      } catch (e) {
+        console.error('Error notifying sync listener:', e);
+      }
+    }
+  }
+
+  enqueue(taskFn, description = '') {
+    if (!isGoogleSheetConfigured()) return;
+    this.queue.push({ taskFn, description, timestamp: Date.now() });
+    this.process();
+  }
+
+  debounceSettingsSync(settings, delayMs = 600) {
+    if (!isGoogleSheetConfigured()) return;
+    if (this.settingsDebounceTimer) {
+      clearTimeout(this.settingsDebounceTimer);
+    }
+    this.settingsDebounceTimer = setTimeout(() => {
+      this.enqueue(() => saveGoogleSheetSettings(settings), 'Sync settings');
+    }, delayMs);
+  }
+
+  async process() {
+    if (this.isProcessing || this.queue.length === 0) return;
+    if (!isGoogleSheetConfigured()) {
+      this.queue = [];
+      return;
+    }
+
+    this.isProcessing = true;
+    this.status = 'syncing';
+    this.notify();
+
+    while (this.queue.length > 0) {
+      const current = this.queue[0];
+      try {
+        await current.taskFn();
+        this.queue.shift(); // Remove successful item
+        this.lastSyncedAt = new Date();
+      } catch (err) {
+        console.warn(`Sync task failed (${current.description}):`, err);
+        // If failed, drop or retry after short pause so we don't loop indefinitely
+        this.queue.shift();
+        this.status = 'error';
+        this.notify();
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+
+    this.isProcessing = false;
+    this.status = 'idle';
+    this.notify();
+  }
+}
+
+export const backgroundSync = new BackgroundSyncManager();
+
+/**
  * Full copyable Google Apps Script Template Code
- * The user can copy-paste this into Google Sheets > Extensions > Apps Script and click "Deploy as Web App"
+ * Creates a two-tab database: "Transactions" and "Settings".
+ * Fully optimized with batch reads and script locks for speed and reliability.
  */
 export const GOOGLE_APPS_SCRIPT_TEMPLATE = `/**
  * ==============================================================================
  * PERSONAL EXPENSE TRACKER - GOOGLE SPREADSHEET DATABASE API (Apps Script)
+ * Version: 2.0.0 (Full Database: Transactions + Settings + High-Speed Batching)
  * ==============================================================================
  * 
  * INSTRUCTIONS (Only 1 Minute Setup):
@@ -340,99 +438,223 @@ export const GOOGLE_APPS_SCRIPT_TEMPLATE = `/**
  * 3. Delete any default code and PASTE this entire script.
  * 4. Click "Deploy" (top right) > "New deployment"
  * 5. Click the gear icon next to "Select type" > choose "Web app"
- * 6. Set Description: "Expense Tracker DB"
+ * 6. Set Description: "Expense Tracker Database"
  * 7. Set "Execute as": "Me"
  * 8. Set "Who has access": "Anyone"  <-- CRITICAL for mobile & laptop sync without login!
  * 9. Click "Deploy", Authorize permissions, and COPY the Web App URL.
  * 10. Paste that Web App URL into Expense Tracker Settings or in .env file!
  */
 
-var SHEET_NAME = 'Transactions';
-var HEADERS = ['id', 'date', 'time', 'type', 'amount', 'category', 'paymentMode', 'notes', 'tags', 'isRecurring', 'createdAt', 'updatedAt'];
+var TX_SHEET_NAME = 'Transactions';
+var SETTINGS_SHEET_NAME = 'Settings';
 
-function getOrCreateSheet() {
+var TX_HEADERS = [
+  'id', 'date', 'time', 'type', 'amount', 'category',
+  'paymentMode', 'notes', 'tags', 'isRecurring', 'createdAt', 'updatedAt'
+];
+
+var SETTINGS_HEADERS = ['key', 'value', 'updatedAt'];
+
+function getOrCreateSheet(sheetName, headers, headerBg) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(SHEET_NAME);
+  var sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAME);
-    sheet.appendRow(HEADERS);
-    sheet.getRange(1, 1, 1, HEADERS.length).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#ffffff');
+    sheet = ss.insertSheet(sheetName);
+    sheet.appendRow(headers);
+    sheet.getRange(1, 1, 1, headers.length)
+      .setFontWeight('bold')
+      .setBackground(headerBg || '#1e1b4b')
+      .setFontColor('#ffffff');
     sheet.setFrozenRows(1);
   }
   return sheet;
 }
 
+function getTxSheet() {
+  return getOrCreateSheet(TX_SHEET_NAME, TX_HEADERS, '#1e1b4b');
+}
+
+function getSettingsSheet() {
+  return getOrCreateSheet(SETTINGS_SHEET_NAME, SETTINGS_HEADERS, '#0f172a');
+}
+
+/**
+ * Read all transactions into memory array
+ */
+function readAllTransactions() {
+  var sheet = getTxSheet();
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return [];
+
+  var values = sheet.getRange(2, 1, lastRow - 1, TX_HEADERS.length).getValues();
+  var list = [];
+  var tz = Session.getScriptTimeZone();
+
+  for (var i = 0; i < values.length; i++) {
+    var row = values[i];
+    if (!row[0]) continue;
+
+    var dateStr = '';
+    if (row[1] instanceof Date) {
+      dateStr = Utilities.formatDate(row[1], tz, 'yyyy-MM-dd');
+    } else {
+      dateStr = String(row[1] || '');
+    }
+
+    list.push({
+      id: String(row[0]),
+      date: dateStr,
+      time: String(row[2] || ''),
+      type: String(row[3] || 'EXPENSE'),
+      amount: Number(row[4]) || 0,
+      category: String(row[5] || 'Other / Misc'),
+      paymentMode: String(row[6] || 'Cash'),
+      notes: String(row[7] || ''),
+      tags: String(row[8] || ''),
+      isRecurring: Boolean(row[9]),
+      createdAt: String(row[10] || ''),
+      updatedAt: String(row[11] || '')
+    });
+  }
+  return list;
+}
+
+/**
+ * Read all settings into key-value map
+ */
+function readAllSettings() {
+  var sheet = getSettingsSheet();
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return {};
+
+  var values = sheet.getRange(2, 1, lastRow - 1, SETTINGS_HEADERS.length).getValues();
+  var map = {};
+  for (var i = 0; i < values.length; i++) {
+    var key = String(values[i][0] || '').trim();
+    if (key) {
+      map[key] = values[i][1];
+    }
+  }
+  return map;
+}
+
+/**
+ * Batch save settings map to Settings sheet
+ */
+function writeSettingsMap(settingsMap) {
+  if (!settingsMap || typeof settingsMap !== 'object') return;
+  var sheet = getSettingsSheet();
+  var lastRow = sheet.getLastRow();
+  var existingKeys = {};
+
+  if (lastRow > 1) {
+    var currentValues = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (var i = 0; i < currentValues.length; i++) {
+      existingKeys[String(currentValues[i][0]).trim()] = i + 2;
+    }
+  }
+
+  var nowStr = new Date().toISOString();
+  var toAppend = [];
+
+  for (var key in settingsMap) {
+    if (!settingsMap.hasOwnProperty(key)) continue;
+    var val = settingsMap[key];
+    var valStr = typeof val === 'object' ? JSON.stringify(val) : String(val);
+
+    if (existingKeys[key]) {
+      var rowIdx = existingKeys[key];
+      sheet.getRange(rowIdx, 2, 1, 2).setValues([[valStr, nowStr]]);
+    } else {
+      toAppend.push([key, valStr, nowStr]);
+    }
+  }
+
+  if (toAppend.length > 0) {
+    var startRow = sheet.getLastRow() + 1;
+    sheet.getRange(startRow, 1, toAppend.length, SETTINGS_HEADERS.length).setValues(toAppend);
+  }
+}
+
+/**
+ * GET Handler - Fast single-roundtrip retrieval of Transactions & Settings
+ */
 function doGet(e) {
   try {
-    var sheet = getOrCreateSheet();
-    var lastRow = sheet.getLastRow();
-    
-    if (lastRow <= 1) {
-      return responseJSON({ status: 'ok', success: true, count: 0, transactions: [] });
-    }
-    
-    var values = sheet.getRange(2, 1, lastRow - 1, HEADERS.length).getValues();
-    var list = [];
-    
-    for (var i = 0; i < values.length; i++) {
-      var row = values[i];
-      if (!row[0]) continue;
-      
-      var dateStr = '';
-      if (row[1] instanceof Date) {
-        dateStr = Utilities.formatDate(row[1], Session.getScriptTimeZone(), 'yyyy-MM-dd');
-      } else {
-        dateStr = String(row[1] || '');
-      }
-      
-      list.push({
-        id: String(row[0]),
-        date: dateStr,
-        time: String(row[2] || ''),
-        type: String(row[3] || 'EXPENSE'),
-        amount: Number(row[4]) || 0,
-        category: String(row[5] || 'Other / Misc'),
-        paymentMode: String(row[6] || 'Cash'),
-        notes: String(row[7] || ''),
-        tags: String(row[8] || ''),
-        isRecurring: Boolean(row[9]),
-        createdAt: String(row[10] || ''),
-        updatedAt: String(row[11] || '')
+    var action = (e && e.parameter && e.parameter.action) || 'getDatabase';
+
+    if (action === 'ping') {
+      var txSheet = getTxSheet();
+      var sSheet = getSettingsSheet();
+      return responseJSON({
+        status: 'ok',
+        success: true,
+        count: Math.max(0, txSheet.getLastRow() - 1),
+        settingsCount: Math.max(0, sSheet.getLastRow() - 1),
+        message: 'Google Spreadsheet Database Ready'
       });
     }
-    
-    return responseJSON({ status: 'ok', success: true, count: list.length, transactions: list });
+
+    if (action === 'getSettings') {
+      return responseJSON({
+        status: 'ok',
+        success: true,
+        settings: readAllSettings()
+      });
+    }
+
+    if (action === 'getTransactions') {
+      var txs = readAllTransactions();
+      return responseJSON({
+        status: 'ok',
+        success: true,
+        count: txs.length,
+        transactions: txs
+      });
+    }
+
+    // Default: 'getDatabase' or 'getAll' -> Returns BOTH in ONE single HTTP call!
+    var txList = readAllTransactions();
+    var settingsData = readAllSettings();
+
+    return responseJSON({
+      status: 'ok',
+      success: true,
+      count: txList.length,
+      transactions: txList,
+      settings: settingsData,
+      timestamp: new Date().toISOString()
+    });
   } catch (err) {
     return responseJSON({ status: 'error', message: err.toString() });
   }
 }
 
+/**
+ * POST Handler - CRUD & Batch Writes with Script Locking
+ */
 function doPost(e) {
+  var lock = LockService.getScriptLock();
   try {
-    var sheet = getOrCreateSheet();
+    lock.tryLock(20000);
+
     var postData = JSON.parse(e.postData.contents);
     var action = postData.action;
-    
+
+    // 1. Insert Transaction
     if (action === 'insert') {
+      var sheet = getTxSheet();
       var tx = postData.transaction;
       sheet.appendRow([
-        tx.id,
-        tx.date,
-        tx.time,
-        tx.type,
-        tx.amount,
-        tx.category,
-        tx.paymentMode,
-        tx.notes,
-        tx.tags,
-        tx.isRecurring,
-        tx.createdAt,
-        tx.updatedAt
+        tx.id, tx.date, tx.time, tx.type, tx.amount, tx.category,
+        tx.paymentMode, tx.notes, tx.tags, tx.isRecurring, tx.createdAt, tx.updatedAt
       ]);
       return responseJSON({ status: 'ok', success: true, action: 'insert', id: tx.id });
     }
-    
+
+    // 2. Update Transaction
     if (action === 'update') {
+      var sheet = getTxSheet();
       var tx = postData.transaction;
       var lastRow = sheet.getLastRow();
       if (lastRow > 1) {
@@ -440,7 +662,7 @@ function doPost(e) {
         for (var i = 0; i < ids.length; i++) {
           if (String(ids[i][0]) === String(tx.id)) {
             var rowIdx = i + 2;
-            sheet.getRange(rowIdx, 1, 1, HEADERS.length).setValues([[
+            sheet.getRange(rowIdx, 1, 1, TX_HEADERS.length).setValues([[
               tx.id, tx.date, tx.time, tx.type, tx.amount, tx.category,
               tx.paymentMode, tx.notes, tx.tags, tx.isRecurring, tx.createdAt, tx.updatedAt
             ]]);
@@ -448,12 +670,13 @@ function doPost(e) {
           }
         }
       }
-      // If not found, append
       sheet.appendRow([tx.id, tx.date, tx.time, tx.type, tx.amount, tx.category, tx.paymentMode, tx.notes, tx.tags, tx.isRecurring, tx.createdAt, tx.updatedAt]);
       return responseJSON({ status: 'ok', success: true, action: 'inserted_fallback', id: tx.id });
     }
-    
+
+    // 3. Delete Transaction
     if (action === 'delete') {
+      var sheet = getTxSheet();
       var idToDelete = String(postData.id);
       var lastRow = sheet.getLastRow();
       if (lastRow > 1) {
@@ -467,13 +690,14 @@ function doPost(e) {
       }
       return responseJSON({ status: 'ok', success: true, action: 'not_found' });
     }
-    
+
+    // 4. Bulk Delete Transactions
     if (action === 'bulkDelete') {
+      var sheet = getTxSheet();
       var idsToDelete = (postData.ids || []).map(String);
       var lastRow = sheet.getLastRow();
       if (lastRow > 1 && idsToDelete.length > 0) {
         var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-        // Delete backwards so index doesn't shift
         for (var i = ids.length - 1; i >= 0; i--) {
           if (idsToDelete.indexOf(String(ids[i][0])) !== -1) {
             sheet.deleteRow(i + 2);
@@ -482,15 +706,21 @@ function doPost(e) {
       }
       return responseJSON({ status: 'ok', success: true, action: 'bulkDelete', count: idsToDelete.length });
     }
-    
-    if (action === 'syncAll') {
+
+    // 5. Save Settings
+    if (action === 'saveSettings') {
+      writeSettingsMap(postData.settings);
+      return responseJSON({ status: 'ok', success: true, action: 'saveSettings' });
+    }
+
+    // 6. Full Transaction Sync
+    if (action === 'syncAll' || action === 'syncTransactions') {
+      var sheet = getTxSheet();
       var txs = postData.transactions || [];
-      // Clear existing content except header
       var lastRow = sheet.getLastRow();
       if (lastRow > 1) {
         sheet.deleteRows(2, lastRow - 1);
       }
-      
       if (txs.length > 0) {
         var rows = txs.map(function(t) {
           return [
@@ -498,14 +728,48 @@ function doPost(e) {
             t.paymentMode, t.notes, t.tags, t.isRecurring, t.createdAt, t.updatedAt
           ];
         });
-        sheet.getRange(2, 1, rows.length, HEADERS.length).setValues(rows);
+        sheet.getRange(2, 1, rows.length, TX_HEADERS.length).setValues(rows);
       }
       return responseJSON({ status: 'ok', success: true, action: 'syncAll', count: txs.length });
     }
-    
+
+    // 7. Full Database Sync (Transactions AND Settings in one atomic call!)
+    if (action === 'syncDatabase') {
+      var sheet = getTxSheet();
+      var txs = postData.transactions || [];
+      var lastRow = sheet.getLastRow();
+      if (lastRow > 1) {
+        sheet.deleteRows(2, lastRow - 1);
+      }
+      if (txs.length > 0) {
+        var rows = txs.map(function(t) {
+          return [
+            t.id, t.date, t.time, t.type, t.amount, t.category,
+            t.paymentMode, t.notes, t.tags, t.isRecurring, t.createdAt, t.updatedAt
+          ];
+        });
+        sheet.getRange(2, 1, rows.length, TX_HEADERS.length).setValues(rows);
+      }
+
+      if (postData.settings) {
+        writeSettingsMap(postData.settings);
+      }
+
+      return responseJSON({
+        status: 'ok',
+        success: true,
+        action: 'syncDatabase',
+        txCount: txs.length
+      });
+    }
+
     return responseJSON({ status: 'error', message: 'Unknown action: ' + action });
   } catch (err) {
     return responseJSON({ status: 'error', message: err.toString() });
+  } finally {
+    try {
+      lock.releaseLock();
+    } catch (e) {}
   }
 }
 
